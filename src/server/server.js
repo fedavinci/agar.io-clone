@@ -269,6 +269,8 @@ const addSpectator = (socket) => {
         sockets[socket.id] = socket;
         spectators.push(socket.id);
         io.emit('playerJoin', { name: '' });
+        // 观众一进来就推送最新 leaderboard
+        sendLeaderboard(socket);
     });
 
     socket.emit("welcome", {}, {
@@ -301,10 +303,11 @@ const tickPlayer = (currentPlayer) => {
     };
 
     const canEatVirus = (cell, cellCircle, virus) => {
-        return virus.mass < cell.mass && isEntityInsideCircle(virus, cellCircle)
+        return virus.mass < cell.mass && isEntityInsideCircle(cell, cellCircle, virus)
     }
 
     const cellsToSplit = [];
+    let leaderboardShouldUpdate = false;
     for (let cellIndex = 0; cellIndex < currentPlayer.cells.length; cellIndex++) {
         const currentCell = currentPlayer.cells[cellIndex];
 
@@ -319,14 +322,32 @@ const tickPlayer = (currentPlayer) => {
             map.viruses.delete(eatenVirusIndexes)
         }
 
+        // 修正顺序：先计算massGained，再删除
         let massGained = eatenMassIndexes.reduce((acc, index) => acc + map.massFood.data[index].mass, 0);
+        massGained += (eatenFoodIndexes.length * Math.max(1, config.foodMass));
+
+        if (massGained > 0) {
+            leaderboardShouldUpdate = true;
+            currentPlayer.changeCellMass(cellIndex, massGained);
+        }
 
         map.food.delete(eatenFoodIndexes);
         map.massFood.remove(eatenMassIndexes);
-        massGained += (eatenFoodIndexes.length * config.foodMass);
-        currentPlayer.changeCellMass(cellIndex, massGained);
     }
     currentPlayer.virusSplit(cellsToSplit, config.limitSplit, config.defaultPlayerMass);
+
+    // 新增：只要有吃球/吃人就立即推送 leaderboard
+    if (leaderboardShouldUpdate) {
+        // 重新计算排行榜
+        calculateLeaderboard();
+        // 推送给所有玩家和观众
+        for (const id in sockets) {
+            sendLeaderboard(sockets[id]);
+        }
+        spectators.forEach(id => {
+            if (sockets[id]) sendLeaderboard(sockets[id]);
+        });
+    }
 };
 
 const tickGame = () => {
@@ -357,6 +378,14 @@ const tickGame = () => {
                 }
             }
         }
+        // 新增：吃人后立即刷新并推送Leaderboard
+        calculateLeaderboard();
+        for (const id in sockets) {
+            sendLeaderboard(sockets[id]);
+        }
+        spectators.forEach(id => {
+            if (sockets[id]) sendLeaderboard(sockets[id]);
+        });
     });
 };
 
@@ -368,7 +397,10 @@ const calculateLeaderboard = () => {
         leaderboardChanged = true;
     } else {
         for (let i = 0; i < leaderboard.length; i++) {
-            if (leaderboard[i].id !== topPlayers[i].id) {
+            if (
+                leaderboard[i].id !== topPlayers[i].id ||
+                leaderboard[i].massTotal !== topPlayers[i].massTotal
+            ) {
                 leaderboard = topPlayers;
                 leaderboardChanged = true;
                 break;

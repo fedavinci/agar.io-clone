@@ -131,8 +131,10 @@ exports.Player = class {
     }
 
     changeCellMass(cellIndex, massDifference) {
-        this.cells[cellIndex].addMass(massDifference)
-        this.massTotal += massDifference;
+        if (massDifference !== 0) {
+            this.cells[cellIndex].addMass(massDifference);
+            this.massTotal += massDifference;
+        }
     }
 
     removeCell(cellIndex) {
