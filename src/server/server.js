@@ -13,7 +13,7 @@ const chatRepository = require('./repositories/chat-repository');
 const config = require('../../config');
 const util = require('./lib/util');
 const mapUtils = require('./map/map');
-const {getPosition} = require("./lib/entityUtils");
+const { getPosition } = require("./lib/entityUtils");
 
 let map = new mapUtils.Map(config);
 
@@ -25,6 +25,10 @@ let leaderboard = [];
 let leaderboardChanged = false;
 
 const Vector = SAT.Vector;
+
+let matchmakingQueue = [];
+let activeRooms = {}; // { roomId: { players: [socketId], spectators: [socketId], ... } }
+let roomIdCounter = 1;
 
 app.use(express.static(__dirname + '/../client'));
 
@@ -41,13 +45,77 @@ io.on('connection', function (socket) {
         default:
             console.log('Unknown user type, not doing anything.');
     }
+
+    // 只注册全局事件（匹配、观战、队列/房间清理等）
+    socket.on('join_matchmaking', () => {
+        if (matchmakingQueue.includes(socket.id)) return;
+        matchmakingQueue.push(socket.id);
+        socket.emit('matching', { waiting: 3 - matchmakingQueue.length });
+        if (matchmakingQueue.length >= 3) {
+            // 创建房间
+            const roomId = 'room_' + (roomIdCounter++);
+            const players = matchmakingQueue.splice(0, 3);
+            activeRooms[roomId] = { players: [...players], spectators: [], status: 'playing', createdAt: Date.now() };
+            // 通知三名玩家进入房间
+            players.forEach(pid => {
+                const psocket = io.sockets.sockets.get(pid);
+                if (psocket) {
+                    psocket.join(roomId);
+                    psocket.emit('match_found', { roomId });
+                }
+            });
+        } else {
+            // 通知所有等待玩家当前等待人数
+            matchmakingQueue.forEach(pid => {
+                const psocket = io.sockets.sockets.get(pid);
+                if (psocket) {
+                    psocket.emit('matching', { waiting: 3 - matchmakingQueue.length });
+                }
+            });
+        }
+    });
+
+    socket.on('get_rooms', () => {
+        // 只返回正在进行中的房间
+        const rooms = Object.entries(activeRooms)
+            .filter(([_, room]) => room.status === 'playing')
+            .map(([roomId, room]) => ({
+                roomId,
+                playerCount: room.players.length,
+                spectatorCount: room.spectators.length,
+                createdAt: room.createdAt
+            }));
+        socket.emit('room_list', rooms);
+    });
+
+    socket.on('spectate_room', ({ roomId }) => {
+        const room = activeRooms[roomId];
+        if (room && room.status === 'playing') {
+            room.spectators.push(socket.id);
+            socket.join(roomId);
+            socket.emit('spectate_joined', { roomId });
+        } else {
+            socket.emit('spectate_failed', { reason: '房间不存在或已结束' });
+        }
+    });
+
+    // 只做队列和房间观众清理，不操作 currentPlayer
+    socket.on('disconnect', () => {
+        const idx = matchmakingQueue.indexOf(socket.id);
+        if (idx !== -1) matchmakingQueue.splice(idx, 1);
+        Object.values(activeRooms).forEach(room => {
+            const sidx = room.spectators.indexOf(socket.id);
+            if (sidx !== -1) room.spectators.splice(sidx, 1);
+            const pidx = room.players.indexOf(socket.id);
+            if (pidx !== -1) room.players.splice(pidx, 1);
+        });
+    });
 });
 
 function generateSpawnpoint() {
     let radius = util.massToRadius(config.defaultPlayerMass);
     return getPosition(config.newPlayerInitialPosition === 'farthest', radius, map.players.data)
 }
-
 
 const addPlayer = (socket) => {
     var currentPlayer = new mapUtils.playerUtils.Player(socket.id);
@@ -74,7 +142,6 @@ const addPlayer = (socket) => {
             io.emit('playerJoin', { name: currentPlayer.name });
             console.log('Total players: ' + map.players.data.length);
         }
-
     });
 
     socket.on('pingcheck', () => {
@@ -93,12 +160,6 @@ const addPlayer = (socket) => {
             height: config.gameHeight
         });
         console.log('[INFO] User ' + currentPlayer.name + ' has respawned');
-    });
-
-    socket.on('disconnect', () => {
-        map.players.removePlayerByID(currentPlayer.id);
-        console.log('[INFO] User ' + currentPlayer.name + ' has disconnected');
-        socket.broadcast.emit('playerDisconnect', { name: currentPlayer.name });
     });
 
     socket.on('playerChat', (data) => {
@@ -183,7 +244,6 @@ const addPlayer = (socket) => {
     });
 
     socket.on('1', function () {
-        // Fire food.
         const minCellMass = config.defaultPlayerMass + config.fireFood;
         for (let i = 0; i < currentPlayer.cells.length; i++) {
             if (currentPlayer.cells[i].mass >= minCellMass) {
@@ -195,6 +255,12 @@ const addPlayer = (socket) => {
 
     socket.on('2', () => {
         currentPlayer.userSplit(config.limitSplit, config.defaultPlayerMass);
+    });
+
+    socket.on('disconnect', () => {
+        map.players.removePlayerByID(currentPlayer.id);
+        console.log('[INFO] User ' + currentPlayer.name + ' has disconnected');
+        socket.broadcast.emit('playerDisconnect', { name: currentPlayer.name });
     });
 }
 
@@ -275,12 +341,23 @@ const tickGame = () => {
         const playerDied = map.players.removeCell(gotEaten.playerIndex, gotEaten.cellIndex);
         if (playerDied) {
             let playerGotEaten = map.players.data[gotEaten.playerIndex];
-            io.emit('playerDied', { name: playerGotEaten.name }); //TODO: on client it is `playerEatenName` instead of `name`
+            io.emit('playerDied', { name: playerGotEaten.name });
             sockets[playerGotEaten.id].emit('RIP');
             map.players.removePlayerByIndex(gotEaten.playerIndex);
+
+            let roomId = null;
+            for (const [rid, room] of Object.entries(activeRooms)) {
+                if (room.players.includes(playerGotEaten.id)) {
+                    roomId = rid;
+                    room.players = room.players.filter(pid => pid !== playerGotEaten.id);
+                    if (room.players.length <= 1) {
+                        endRoom(roomId);
+                    }
+                    break;
+                }
+            }
         }
     });
-
 };
 
 const calculateLeaderboard = () => {
@@ -340,6 +417,38 @@ const updateSpectator = (socketID) => {
     sockets[socketID].emit('serverTellPlayerMove', playerData, map.players.data, map.food.data, map.massFood.data, map.viruses.data);
     if (leaderboardChanged) {
         sendLeaderboard(sockets[socketID]);
+    }
+}
+
+// ========== 游戏结束时清理房间 ========== //
+function endRoom(roomId) {
+    const room = activeRooms[roomId];
+    if (room) {
+        // 判断赢家（最后剩下的玩家）
+        let winnerId = null;
+        if (room.players.length === 1) {
+            winnerId = room.players[0];
+        }
+        // 通知观众和玩家房间结束/胜利
+        room.players.forEach(pid => {
+            const psocket = io.sockets.sockets.get(pid);
+            if (psocket) {
+                psocket.leave(roomId);
+                if (winnerId && pid === winnerId) {
+                    psocket.emit('win', { roomId });
+                } else {
+                    psocket.emit('room_ended', { roomId });
+                }
+            }
+        });
+        room.spectators.forEach(pid => {
+            const psocket = io.sockets.sockets.get(pid);
+            if (psocket) {
+                psocket.leave(roomId);
+                psocket.emit('room_ended', { roomId });
+            }
+        });
+        delete activeRooms[roomId];
     }
 }
 

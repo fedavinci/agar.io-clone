@@ -3,14 +3,17 @@
     font-size: 14px;
 }
 
-html, body {
+html,
+body {
     background-color: #222;
     overflow: hidden;
 }
 
-html, body, canvas {
-    width: 100%;
-    height: 100%;
+html,
+body,
+canvas {
+    width: 100vw;
+    height: 100vh;
     margin: 0;
     padding: 0;
     background: rgba(0, 0, 0, 0.4);
@@ -18,10 +21,14 @@ html, body, canvas {
 }
 
 div {
-    -webkit-user-select: none; /* webkit (safari, chrome) browsers */
-    -moz-user-select: none; /* mozilla browsers */
-    -khtml-user-select: none; /* webkit (konqueror) browsers */
-    -ms-user-select: none; /* IE10+ */
+    -webkit-user-select: none;
+    /* webkit (safari, chrome) browsers */
+    -moz-user-select: none;
+    /* mozilla browsers */
+    -khtml-user-select: none;
+    /* webkit (konqueror) browsers */
+    -ms-user-select: none;
+    /* IE10+ */
 }
 
 #split {
@@ -107,6 +114,10 @@ div {
     content: "» ";
 }
 
+.chatbox .chat-list li.system:after {
+    content: "»";
+}
+
 .chatbox .chat-input {
     pointer-events: all;
     box-sizing: border-box;
@@ -152,12 +163,14 @@ div {
     outline: none;
 }
 
-#playerNameInput:focus, #playerNameInput.focus {
+#playerNameInput:focus,
+#playerNameInput.focus {
     border: solid 1px #CCCCCC;
     box-shadow: 0 0 3px 1px #DDDDDD;
 }
 
-#startButton, #spectateButton {
+#startButton,
+#spectateButton {
     position: relative;
     margin: auto;
     margin-top: 10px;
@@ -180,8 +193,10 @@ div {
     margin-bottom: 10px;
 }
 
-#spectateButton:active, #spectateButton:hover,
-#startButton:active, #startButton:hover {
+#spectateButton:active,
+#spectateButton:hover,
+#startButton:active,
+#startButton:hover {
     top: 1px;
     background: #55D88B;
     outline: none;
@@ -212,7 +227,8 @@ div {
     margin-bottom: 10px;
 }
 
-#settingsButton:active, #settingsButton:hover {
+#settingsButton:active,
+#settingsButton:hover {
     top: 1px;
     background: #55D88B;
     outline: none;
@@ -220,7 +236,8 @@ div {
     box-shadow: none;
 }
 
-#settings, #startMenuWrapper {
+#settings,
+#startMenuWrapper {
     -webkit-transition: max-height 1s;
     -moz-transition: max-height 1s;
     -ms-transition: max-height 1s;
@@ -247,7 +264,7 @@ div {
 #startMenu .input-error {
     color: red;
     opacity: 0;
-    font-size : 12px;
+    font-size: 12px;
 }
 
 #startMenuWrapper {
@@ -261,25 +278,57 @@ div {
     opacity: 0;
 }
 
-@media only screen  and (min-width : 1224px) {
-#mobile {
-display: none;
-	}
+@media only screen and (min-width : 1224px) {
+    #mobile {
+        display: none;
+    }
 }
 
-@media only screen  and (max-width : 1224px) {
-#chatbox {
-display: none;
-        }
+@media only screen and (max-width : 1224px) {
+    #chatbox {
+        display: none;
+    }
 }
 
-input [type="image"]:focus{
- border:none;
- outline: 1px solid transparent;
- border-style: none;
+input [type="image"]:focus {
+    border: none;
+    outline: 1px solid transparent;
+    border-style: none;
 }
 
 *:focus {
- outline: 1px solid transparent;
- border-style: none;
+    outline: 1px solid transparent;
+    border-style: none;
+}
+
+.overlay {
+    position: fixed;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1000;
+    background: rgba(0, 0, 0, 1);
+    display: none;
+    justify-content: center;
+    align-items: center;
+    color: #fff;
+    font-size: 24px;
+    flex-direction: column;
+}
+
+.overlay[style*="display: block"] {
+    display: flex !important;
+}
+
+.overlay button {
+    margin-top: 24px;
+    font-size: 20px;
+    padding: 8px 24px;
+    cursor: pointer;
+}
+
+.room-item {
+    margin: 12px 0;
+    font-size: 20px;
 }

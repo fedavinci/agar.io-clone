@@ -17,7 +17,7 @@ if (/Android|webOS|iPhone|iPad|iPod|BlackBerry/i.test(navigator.userAgent)) {
     global.mobile = true;
 }
 
-function startGame(type) {
+function startGame(type, roomId) {
     global.playerName = playerNameInput.value.replace(/(<([^>]+)>)/ig, '').substring(0, 25);
     global.playerType = type;
 
@@ -37,6 +37,10 @@ function startGame(type) {
     window.chat.registerFunctions();
     window.canvas.socket = socket;
     global.socket = socket;
+    // 观战时强制 resize，确保画布全屏
+    if (type === 'spectator') {
+        setTimeout(resize, 0);
+    }
 }
 
 // Checks if the nick chosen contains valid alphanumeric characters (and underscores).
@@ -46,6 +50,50 @@ function validNick() {
     return regex.exec(playerNameInput.value) !== null;
 }
 
+// ========== 新增全局变量和 UI 切换函数 ========== //
+var matchingWrapper = document.getElementById('matchingWrapper');
+var roomListWrapper = document.getElementById('roomListWrapper');
+var resultWrapper = document.getElementById('resultWrapper');
+var resultMsg = document.getElementById('resultMsg');
+var backToMenuBtn = document.getElementById('backToMenuBtn');
+
+function showMainMenuUI() {
+    document.getElementById('startMenuWrapper').style.maxHeight = '1000px';
+    document.getElementById('gameAreaWrapper').style.opacity = 0;
+    if (matchingWrapper) matchingWrapper.style.display = 'none';
+    if (roomListWrapper) roomListWrapper.style.display = 'none';
+    if (resultWrapper) resultWrapper.style.display = 'none';
+}
+function showMatchingUI(waiting) {
+    if (matchingWrapper) {
+        matchingWrapper.style.display = 'block';
+        matchingWrapper.innerText = waiting ? `匹配中，等待${waiting}人...` : '匹配中...';
+    }
+    document.getElementById('startMenuWrapper').style.maxHeight = '0px';
+    document.getElementById('gameAreaWrapper').style.opacity = 0;
+}
+function hideMatchingUI() {
+    if (matchingWrapper) matchingWrapper.style.display = 'none';
+}
+function showRoomListUI() {
+    if (roomListWrapper) roomListWrapper.style.display = 'block';
+    document.getElementById('startMenuWrapper').style.maxHeight = '0px';
+    document.getElementById('gameAreaWrapper').style.opacity = 0;
+}
+function hideRoomListUI() {
+    if (roomListWrapper) roomListWrapper.style.display = 'none';
+}
+function showResultUI(msg) {
+    if (resultWrapper) {
+        resultWrapper.style.display = 'block';
+        if (resultMsg) resultMsg.innerText = msg;
+    }
+    document.getElementById('gameAreaWrapper').style.opacity = 0;
+}
+function hideResultUI() {
+    if (resultWrapper) resultWrapper.style.display = 'none';
+}
+
 window.onload = function () {
 
     var btn = document.getElementById('startButton'),
@@ -53,15 +101,23 @@ window.onload = function () {
         nickErrorText = document.querySelector('#startMenu .input-error');
 
     btnS.onclick = function () {
-        startGame('spectator');
+        showRoomListUI();
+        if (!socket) {
+            socket = io({ query: "type=spectator" });
+            setupSocket(socket);
+        }
+        socket.emit('get_rooms');
     };
 
     btn.onclick = function () {
-
-        // Checks if the nick is valid.
         if (validNick()) {
             nickErrorText.style.opacity = 0;
-            startGame('player');
+            showMatchingUI();
+            if (!socket) {
+                socket = io({ query: "type=player" });
+                setupSocket(socket);
+            }
+            socket.emit('join_matchmaking');
         } else {
             nickErrorText.style.opacity = 1;
         }
@@ -191,10 +247,8 @@ function setupSocket(socket) {
     });
 
     socket.on('playerDied', (data) => {
-        const player = isUnnamedCell(data.playerEatenName) ? 'An unnamed cell' : data.playerEatenName;
-        //const killer = isUnnamedCell(data.playerWhoAtePlayerName) ? 'An unnamed cell' : data.playerWhoAtePlayerName;
-
-        //window.chat.addSystemLine('{GAME} - <b>' + (player) + '</b> was eaten by <b>' + (killer) + '</b>');
+        const eatenName = data && typeof data.playerEatenName === 'string' ? data.playerEatenName : '';
+        const player = isUnnamedCell(eatenName) ? 'An unnamed cell' : eatenName;
         window.chat.addSystemLine('{GAME} - <b>' + (player) + '</b> was eaten');
     });
 
@@ -211,19 +265,19 @@ function setupSocket(socket) {
         var status = '<span class="title">Leaderboard</span>';
         for (var i = 0; i < leaderboard.length; i++) {
             status += '<br />';
+            let score = leaderboard[i].massTotal || leaderboard[i].mass || 0;
             if (leaderboard[i].id == player.id) {
                 if (leaderboard[i].name.length !== 0)
-                    status += '<span class="me">' + (i + 1) + '. ' + leaderboard[i].name + "</span>";
+                    status += `<span class="me">${i + 1}. ${leaderboard[i].name} (${score})</span>`;
                 else
-                    status += '<span class="me">' + (i + 1) + ". An unnamed cell</span>";
+                    status += `<span class="me">${i + 1}. An unnamed cell (${score})</span>`;
             } else {
                 if (leaderboard[i].name.length !== 0)
-                    status += (i + 1) + '. ' + leaderboard[i].name;
+                    status += `${i + 1}. ${leaderboard[i].name} (${score})`;
                 else
-                    status += (i + 1) + '. An unnamed cell';
+                    status += `${i + 1}. An unnamed cell (${score})`;
             }
         }
-        //status += '<br />Players: ' + data.players;
         document.getElementById('status').innerHTML = status;
     });
 
@@ -275,6 +329,34 @@ function setupSocket(socket) {
             render.drawErrorMessage('You were kicked!', graph, global.screen);
         }
         socket.close();
+    });
+
+    // ========== 修改 setupSocket，监听匹配、观战、房间、结果相关事件 ========== //
+    socket.on('matching', function (data) {
+        showMatchingUI(data.waiting);
+    });
+    socket.on('match_found', function (data) {
+        hideMatchingUI();
+        startGame('player', data.roomId);
+    });
+    socket.on('room_list', function (rooms) {
+        renderRoomList(rooms);
+    });
+    socket.on('spectate_joined', function (data) {
+        hideRoomListUI();
+        startGame('spectator', data.roomId);
+    });
+    socket.on('spectate_failed', function (data) {
+        alert(data.reason || '观战失败');
+    });
+    socket.on('room_ended', function (data) {
+        showResultUI('房间已结束');
+    });
+    socket.on('RIP', function () {
+        showResultUI('你失败了');
+    });
+    socket.on('win', function (data) {
+        showResultUI('你赢了！');
     });
 }
 
@@ -376,4 +458,57 @@ function resize() {
     }
 
     socket.emit('windowResized', { screenWidth: global.screen.width, screenHeight: global.screen.height });
+}
+
+// ========== 渲染房间列表和观战按钮 ========== //
+function renderRoomList(rooms) {
+    if (!roomListWrapper) return;
+    // 先清空，防止事件重复绑定
+    roomListWrapper.innerHTML = '';
+    roomListWrapper.innerHTML += '<h3>正在进行中的房间</h3>';
+    if (rooms.length === 0) {
+        roomListWrapper.innerHTML += '<div>暂无房间</div>';
+    } else {
+        rooms.forEach(room => {
+            const div = document.createElement('div');
+            div.className = 'room-item';
+            div.innerHTML = `房间号: ${room.roomId} | 玩家: ${room.playerCount}/3 | 观众: ${room.spectatorCount} <button class="spectateBtn" data-room="${room.roomId}">观战</button>`;
+            roomListWrapper.appendChild(div);
+        });
+        // 绑定观战按钮事件
+        Array.from(document.getElementsByClassName('spectateBtn')).forEach(btn => {
+            btn.onclick = function () {
+                const roomId = this.getAttribute('data-room');
+                if (socket) socket.emit('spectate_room', { roomId });
+            };
+        });
+    }
+    // 返回主界面按钮
+    const backBtn = document.createElement('button');
+    backBtn.innerText = '返回主界面';
+    backBtn.onclick = function () {
+        showMainMenuUI();
+        // 断开观战 socket，防止状态混乱
+        if (socket && global.playerType === 'spectator') {
+            socket.disconnect();
+            socket = null;
+        }
+        // 可选：刷新页面彻底重置
+        // window.location.reload();
+    };
+    roomListWrapper.appendChild(backBtn);
+}
+
+// ========== 结果界面返回主界面按钮事件 ========== //
+if (backToMenuBtn) {
+    backToMenuBtn.onclick = function () {
+        showMainMenuUI();
+        // 断开观战 socket，防止状态混乱
+        if (socket && global.playerType === 'spectator') {
+            socket.disconnect();
+            socket = null;
+        }
+        // 可选：刷新页面彻底重置
+        // window.location.reload();
+    };
 }

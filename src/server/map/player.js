@@ -246,7 +246,7 @@ exports.Player = class {
         for (let i = 0; i < this.cells.length; i++) {
             let cell = this.cells[i];
             cell.move(this.x, this.y, this.target, slowBase, initMassLog);
-            gameLogic.adjustForBoundaries(cell, cell.radius/3, 0, gameWidth, gameHeight);
+            gameLogic.adjustForBoundaries(cell, cell.radius / 3, 0, gameWidth, gameHeight);
 
             xSum += cell.x;
             ySum += cell.y;
@@ -334,7 +334,8 @@ exports.PlayerManager = class {
         for (var i = 0; i < Math.min(10, this.data.length); i++) {
             topPlayers.push({
                 id: this.data[i].id,
-                name: this.data[i].name
+                name: this.data[i].name,
+                massTotal: Math.round(this.data[i].massTotal)
             });
         }
         return topPlayers;
