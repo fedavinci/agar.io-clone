@@ -37,21 +37,25 @@ class Cell {
         return new sat.Circle(new sat.Vector(this.x, this.y), this.radius);
     }
 
-    move(playerX, playerY, playerTarget, slowBase, initMassLog) {
-        var target = {
-            x: playerX - this.x + playerTarget.x,
-            y: playerY - this.y + playerTarget.y
-        };
-        var dist = Math.hypot(target.y, target.x)
-        var deg = Math.atan2(target.y, target.x);
+    move(playerX, playerY, playerTarget, slowBase, initMassLog, isAI = false) {
+        if (!playerTarget) return;
+        console.log(`[Player.move] playerTarget:`, playerTarget, `cells.length: ${this.cells ? this.cells.length : 0}, move前: (${this.x},${this.y})`);
+        let dx, dy;
+        if (isAI) {
+            dx = playerTarget.x - this.x;
+            dy = playerTarget.y - this.y;
+        } else {
+            dx = playerX - this.x + playerTarget.x;
+            dy = playerY - this.y + playerTarget.y;
+        }
+        var dist = Math.hypot(dx, dy);
+        var deg = Math.atan2(dy, dx);
         var slowDown = 1;
         if (this.speed <= MIN_SPEED) {
             slowDown = util.mathLog(this.mass, slowBase) - initMassLog + 1;
         }
-
         var deltaY = this.speed * Math.sin(deg) / slowDown;
         var deltaX = this.speed * Math.cos(deg) / slowDown;
-
         if (this.speed > MIN_SPEED) {
             this.speed -= SPEED_DECREMENT;
         }
@@ -59,13 +63,13 @@ class Cell {
             deltaY *= dist / (MIN_DISTANCE + this.radius);
             deltaX *= dist / (MIN_DISTANCE + this.radius);
         }
-
         if (!isNaN(deltaY)) {
             this.y += deltaY;
         }
         if (!isNaN(deltaX)) {
             this.x += deltaX;
         }
+        console.log(`[Player.move] move后: (${this.x},${this.y})`);
     }
 
     // 0: nothing happened
@@ -243,13 +247,11 @@ exports.Player = class {
                 this.pushAwayCollidingCells();
             }
         }
-
         let xSum = 0, ySum = 0;
         for (let i = 0; i < this.cells.length; i++) {
             let cell = this.cells[i];
-            cell.move(this.x, this.y, this.target, slowBase, initMassLog);
+            cell.move(this.x, this.y, this.target, slowBase, initMassLog, this.isAI || false);
             gameLogic.adjustForBoundaries(cell, cell.radius / 3, 0, gameWidth, gameHeight);
-
             xSum += cell.x;
             ySum += cell.y;
         }

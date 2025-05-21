@@ -25,7 +25,9 @@ exports.mathLog = (function () {
 
 // get the Euclidean distance between the edges of two shapes
 exports.getDistance = function (p1, p2) {
-    return Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2)) - p1.radius - p2.radius;
+    const r1 = p1.radius || 0;
+    const r2 = p2.radius || 0;
+    return Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2)) - r1 - r2;
 };
 
 exports.randomInRange = function (from, to) {
