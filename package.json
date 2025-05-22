@@ -7,7 +7,8 @@
     "build": "gulp build",
     "start": "gulp run",
     "watch": "gulp watch",
-    "test": "gulp test"
+    "test": "gulp test",
+    "vercel-build": "gulp build && mkdir -p dist && cp -r src/client/* dist/"
   },
   "repository": {
     "type": "git",
@@ -58,7 +59,6 @@
     "sat": "^0.9.0",
     "socket.io": "^4.6.1",
     "socket.io-client": "^4.6.1",
-    "sqlite3": "^5.1.6",
     "uuid": "^9.0.0",
     "webpack": "^5.82.1",
     "webpack-stream": "^7.0.0"

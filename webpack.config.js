@@ -2,6 +2,7 @@ module.exports = (isProduction) => ({
     entry: "./src/client/js/app.js",
     mode: isProduction ? 'production' : 'development',
     output: {
+        path: process.env.VERCEL ? __dirname + '/dist' : __dirname,
         library: "app",
         filename: "app.js"
     },

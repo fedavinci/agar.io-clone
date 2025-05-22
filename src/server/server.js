@@ -4,7 +4,13 @@
 const express = require('express');
 const app = express();
 const http = require('http').Server(app);
-const io = require('socket.io')(http);
+const io = require('socket.io')(http, {
+    cors: {
+        origin: process.env.VERCEL_URL ? ["https://" + process.env.VERCEL_URL] : ["http://localhost:3000"],
+        methods: ["GET", "POST"],
+        credentials: true
+    }
+});
 const SAT = require('sat');
 
 const gameLogic = require('./game-logic');
@@ -709,6 +715,12 @@ setInterval(gameloop, 1000);
 setInterval(sendUpdates, 1000 / config.networkUpdateFactor);
 
 // Don't touch, IP configurations.
-var ipaddress = process.env.OPENSHIFT_NODEJS_IP || process.env.IP || config.host;
-var serverport = process.env.OPENSHIFT_NODEJS_PORT || process.env.PORT || config.port;
-http.listen(serverport, ipaddress, () => console.log('[DEBUG] Listening on ' + ipaddress + ':' + serverport));
+var ipaddress = process.env.VERCEL ? '0.0.0.0' : (process.env.OPENSHIFT_NODEJS_IP || process.env.IP || config.host);
+var serverport = process.env.VERCEL ? 3000 : (process.env.OPENSHIFT_NODEJS_PORT || process.env.PORT || config.port);
+
+// 在 Vercel 环境中，我们需要导出 app 而不是直接监听端口
+if (process.env.VERCEL) {
+    module.exports = app;
+} else {
+    http.listen(serverport, ipaddress, () => console.log('[DEBUG] Listening on ' + ipaddress + ':' + serverport));
+}
