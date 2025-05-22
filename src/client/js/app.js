@@ -27,7 +27,15 @@ function startGame(type, roomId) {
     document.getElementById('startMenuWrapper').style.maxHeight = '0px';
     document.getElementById('gameAreaWrapper').style.opacity = 1;
     if (!socket) {
-        socket = io({ query: "type=" + type });
+        socket = io({
+            query: "type=" + type,
+            transports: ['websocket', 'polling'],
+            forceNew: true,
+            reconnection: true,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 5000,
+            reconnectionAttempts: 5
+        });
         setupSocket(socket);
     }
     if (!global.animLoopHandle)

@@ -6,10 +6,12 @@ const app = express();
 const http = require('http').Server(app);
 const io = require('socket.io')(http, {
     cors: {
-        origin: process.env.VERCEL_URL ? ["https://" + process.env.VERCEL_URL] : ["http://localhost:3000"],
+        origin: "*",
         methods: ["GET", "POST"],
-        credentials: true
-    }
+        credentials: true,
+        transports: ['websocket', 'polling']
+    },
+    allowEIO3: true
 });
 const SAT = require('sat');
 
