@@ -14,8 +14,6 @@ const io = require('socket.io')(http, {
 const SAT = require('sat');
 
 const gameLogic = require('./game-logic');
-const loggingRepositry = require('./repositories/logging-repository');
-const chatRepository = require('./repositories/chat-repository');
 const config = require('../../config');
 const util = require('./lib/util');
 const mapUtils = require('./map/map');
@@ -198,11 +196,7 @@ const addPlayer = (socket) => {
             currentPlayer.admin = true;
         } else {
             console.log('[ADMIN] ' + currentPlayer.name + ' attempted to log in with the incorrect password: ' + password);
-
             socket.emit('serverMSG', 'Password incorrect, attempt logged.');
-
-            loggingRepositry.logFailedLoginAttempt(currentPlayer.name, currentPlayer.ipAddress)
-                .catch((err) => console.error("Error when attempting to log failed login attempt", err));
         }
     });
 
