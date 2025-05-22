@@ -181,9 +181,6 @@ const addPlayer = (socket) => {
             sender: currentPlayer.name,
             message: _message.substring(0, 35)
         });
-
-        chatRepository.logChatMessage(_sender, _message, currentPlayer.ipAddress)
-            .catch((err) => console.error("Error when attempting to log chat message", err));
     });
 
     socket.on('pass', async (data) => {
@@ -590,6 +587,13 @@ function endRoom(roomId) {
                     psocket.emit('win', { roomId });
                 } else {
                     psocket.emit('room_ended', { roomId });
+                }
+            }
+            // 清理 AI 玩家
+            if (pid.startsWith('AI_')) {
+                const aiIndex = map.players.data.findIndex(p => p.id === pid);
+                if (aiIndex !== -1) {
+                    map.players.removePlayerByIndex(aiIndex);
                 }
             }
         });
