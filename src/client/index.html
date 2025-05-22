@@ -27,7 +27,7 @@
         </div>
         <canvas tabindex="1" id="cvs"></canvas>
     </div>
-    <div id="startMenuWrapper">
+    <div id="startMenuWrapper" style="display:none">
         <div id="startMenu">
             <p>SUI Battle Arenagar</p>
             <input type="text" tabindex="0" autofocus placeholder="Enter your name here" id="playerNameInput"
@@ -82,6 +82,7 @@
         document.addEventListener('DOMContentLoaded', function () {
             const mode = getQueryParam('mode');
             if (mode === 'play') {
+                document.getElementById('startMenuWrapper')?.style.setProperty('display', 'block');
                 document.getElementById('spectateButton')?.style.setProperty('display', 'none');
                 document.getElementById('settingsButton')?.style.setProperty('display', 'none');
             }
