@@ -3,16 +3,7 @@
 
 const express = require('express');
 const app = express();
-const http = require('http').Server(app);
-const io = require('socket.io')(http, {
-    cors: {
-        origin: "*",
-        methods: ["GET", "POST"],
-        credentials: true,
-        transports: ['websocket', 'polling']
-    },
-    allowEIO3: true
-});
+const { Server } = require('socket.io');
 const SAT = require('sat');
 
 const gameLogic = require('./game-logic');
@@ -39,6 +30,34 @@ let aiIdCounter = 1;
 let aiTimeout = null;
 
 app.use(express.static(__dirname + '/../client'));
+
+let io;
+if (process.env.VERCEL) {
+    // Vercel 环境下，使用 SocketIO 的 serverless 模式
+    io = new Server({
+        cors: {
+            origin: "*",
+            methods: ["GET", "POST"],
+            credentials: true,
+            transports: ['websocket', 'polling']
+        },
+        allowEIO3: true,
+        path: '/socket.io/'
+    });
+} else {
+    // 本地开发环境，使用传统模式
+    const http = require('http').Server(app);
+    io = new Server(http, {
+        cors: {
+            origin: "*",
+            methods: ["GET", "POST"],
+            credentials: true,
+            transports: ['websocket', 'polling']
+        },
+        allowEIO3: true,
+        path: '/socket.io/'
+    });
+}
 
 io.on('connection', function (socket) {
     let type = socket.handshake.query.type;
@@ -710,13 +729,14 @@ setInterval(tickGame, 1000 / 60);
 setInterval(gameloop, 1000);
 setInterval(sendUpdates, 1000 / config.networkUpdateFactor);
 
-// Don't touch, IP configurations.
-var ipaddress = process.env.VERCEL ? '0.0.0.0' : (process.env.OPENSHIFT_NODEJS_IP || process.env.IP || config.host);
-var serverport = process.env.VERCEL ? 3000 : (process.env.OPENSHIFT_NODEJS_PORT || process.env.PORT || config.port);
-
-// 在 Vercel 环境中，我们需要导出 app 而不是直接监听端口
+// 修改导出部分
 if (process.env.VERCEL) {
     module.exports = app;
+    // 在 Vercel 环境中，Socket.IO 会自动附加到 app
+    app.io = io;
 } else {
+    // 本地开发环境
+    const ipaddress = process.env.IP || config.host;
+    const serverport = process.env.PORT || config.port;
     http.listen(serverport, ipaddress, () => console.log('[DEBUG] Listening on ' + ipaddress + ':' + serverport));
 }
