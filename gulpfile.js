@@ -53,7 +53,7 @@ function setDev(done) {
 function mocha(done) {
     const mochaInstance = new Mocha()
     const files = fs
-        .readdirSync('test/', {recursive: true})
+        .readdirSync('test/', { recursive: true })
         .filter(x => x.endsWith('.js')).map(x => path.resolve('test/' + x));
     for (const file of files) {
         mochaInstance.addFile(file);

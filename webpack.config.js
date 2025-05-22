@@ -3,13 +3,21 @@ module.exports = (isProduction) => ({
     mode: isProduction ? 'production' : 'development',
     output: {
         path: process.env.VERCEL ? __dirname + '/dist' : __dirname,
-        library: "app",
         filename: "app.js"
     },
     devtool: false,
     module: {
         rules: getRules(isProduction)
     },
+    resolve: {
+        fallback: {
+            "buffer": false,
+            "crypto": false,
+            "util": false,
+            "stream": false
+        }
+    },
+    target: 'web'
 });
 
 function getRules(isProduction) {
@@ -22,7 +30,9 @@ function getRules(isProduction) {
                     loader: 'babel-loader',
                     options: {
                         presets: [
-                            ['@babel/preset-env', { targets: "defaults" }]
+                            ['@babel/preset-env', {
+                                targets: "defaults"
+                            }]
                         ]
                     }
                 }
