@@ -487,14 +487,13 @@ function renderRoomList(rooms) {
     const backBtn = document.createElement('button');
     backBtn.innerText = '返回主界面';
     backBtn.onclick = function () {
-        showMainMenuUI();
         // 断开观战 socket，防止状态混乱
         if (socket && global.playerType === 'spectator') {
             socket.disconnect();
             socket = null;
         }
-        // 可选：刷新页面彻底重置
-        // window.location.reload();
+        // 直接导航到主页面
+        window.parent.location.href = 'http://localhost:5173/sui-battle-arena/';
     };
     roomListWrapper.appendChild(backBtn);
 }
@@ -502,13 +501,12 @@ function renderRoomList(rooms) {
 // ========== 结果界面返回主界面按钮事件 ========== //
 if (backToMenuBtn) {
     backToMenuBtn.onclick = function () {
-        showMainMenuUI();
         // 断开观战 socket，防止状态混乱
         if (socket && global.playerType === 'spectator') {
             socket.disconnect();
             socket = null;
         }
-        // 可选：刷新页面彻底重置
-        // window.location.reload();
+        // 直接导航到主页面
+        window.parent.location.href = 'http://localhost:5173/sui-battle-arena/';
     };
 }

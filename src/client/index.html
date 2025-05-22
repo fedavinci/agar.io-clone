@@ -4,7 +4,7 @@
 <head>
     <!-- Meta Properties -->
     <meta charset="UTF-8">
-    <title>Open Agar</title>
+    <title>SUI Battle Arenagar</title>
     <meta name="viewport"
         content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
     <!-- CSS -->
@@ -29,7 +29,7 @@
     </div>
     <div id="startMenuWrapper">
         <div id="startMenu">
-            <p>Open Agar</p>
+            <p>SUI Battle Arenagar</p>
             <input type="text" tabindex="0" autofocus placeholder="Enter your name here" id="playerNameInput"
                 maxlength="25" />
             <b class="input-error">Nick must be alphanumeric characters only!</b>
@@ -74,6 +74,38 @@
     <!-- JS -->
     <script src="//code.jquery.com/jquery-2.2.0.min.js"></script>
     <script src="js/app.js"></script>
+    <script>
+        function getQueryParam(name) {
+            const url = new URL(window.location.href);
+            return url.searchParams.get(name);
+        }
+        document.addEventListener('DOMContentLoaded', function () {
+            const mode = getQueryParam('mode');
+            if (mode === 'play') {
+                document.getElementById('spectateButton')?.style.setProperty('display', 'none');
+                document.getElementById('settingsButton')?.style.setProperty('display', 'none');
+            }
+            if (mode === 'betting') {
+                // 直接显示房间列表，不显示主菜单
+                document.getElementById('startMenuWrapper')?.style.setProperty('display', 'none');
+                document.getElementById('roomListWrapper')?.style.setProperty('display', 'block');
+                // 主动请求房间列表
+                function tryEmitRooms() {
+                    if (window.socket) {
+                        window.socket.emit('get_rooms');
+                    } else {
+                        setTimeout(tryEmitRooms, 200);
+                    }
+                }
+                tryEmitRooms();
+            }
+        });
+        window.addEventListener('message', function (event) {
+            if (event.data && event.data.action === 'spectate') {
+                document.getElementById('spectateButton')?.click();
+            }
+        });
+    </script>
 </body>
 
 </html>

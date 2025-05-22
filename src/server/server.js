@@ -116,6 +116,26 @@ io.on('connection', function (socket) {
             const pidx = room.players.indexOf(socket.id);
             if (pidx !== -1) room.players.splice(pidx, 1);
         });
+
+        // === 自动清理没有真人玩家的房间和AI ===
+        for (const [roomId, room] of Object.entries(activeRooms)) {
+            // 只保留真人玩家
+            const realPlayers = room.players.filter(pid => !pid.startsWith('AI_'));
+            if (realPlayers.length === 0) {
+                // 删除房间内所有AI玩家
+                room.players.forEach(pid => {
+                    if (pid.startsWith('AI_')) {
+                        // 从 map.players.data 里移除AI
+                        const aiIndex = map.players.findIndexByID(pid);
+                        if (aiIndex > -1) {
+                            map.players.removePlayerByIndex(aiIndex);
+                        }
+                    }
+                });
+                // 删除房间
+                delete activeRooms[roomId];
+            }
+        }
     });
 });
 
@@ -477,6 +497,10 @@ const tickGame = () => {
     map.massFood.move(config.gameWidth, config.gameHeight);
     map.players.handleCollisions(function (gotEaten, eater) {
         const cellGotEaten = map.players.getCell(gotEaten.playerIndex, gotEaten.cellIndex);
+        if (!cellGotEaten) {
+            console.warn('cellGotEaten is undefined', gotEaten, eater);
+            return; // 跳过本次处理，防止报错
+        }
         map.players.data[eater.playerIndex].changeCellMass(eater.cellIndex, cellGotEaten.mass);
         const playerDied = map.players.removeCell(gotEaten.playerIndex, gotEaten.cellIndex);
         if (playerDied) {
