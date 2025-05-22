@@ -44,26 +44,13 @@ if (process.env.VERCEL) {
         allowEIO3: true,
         path: '/socket.io/'
     });
-    // This is the crucial part for Vercel:
-    // Export the Socket.IO server instance.
-    module.exports = (req, res) => {
-        if (req.url.startsWith('/socket.io')) {
-            io.emit('connection', req.socket); // This line is not directly how you attach sockets, but demonstrates the intent.
-                                               // Vercel's adapter handles the actual connection.
-            // For a complete integration, you might need a Vercel-specific Socket.IO adapter or handle the connection explicitly if `io.attach` is not suitable.
-            // However, with io = new Server({...}) and the routes, Vercel generally handles this.
-            // The key is that the `io` instance must be accessible and active for incoming requests.
-        }
-        app(req, res); // Also allow express to handle non-socket.io requests
-    };
-    // If you're using a newer version of Socket.IO that automatically attaches,
-    // you might not need the `module.exports` as a function that manually routes,
-    // but rather just export `io` or the `app` directly if `io` is internally attached to `app`.
-    // However, for clear separation and to ensure Socket.IO handles its own path,
-    // the structure below is often more robust for serverless.
-    module.exports = app; // For Express routes
-    app.io = io; // Expose io instance for Vercel's internal handling if needed
 
+    // 关键改变：在 Vercel 环境中，通常直接导出 app。Socket.IO 会通过 Vercel 的适配器自动处理。
+    // 有时，io.attach(app) 可以在内部帮助 Socket.IO 识别并处理请求。
+    // 如果没有显式创建 http 服务器，app.io = io 是一种将 Socket.IO 实例暴露给 Vercel 的方式。
+    module.exports = app;
+    app.io = io; // 确保io实例可以被Vercel的运行时访问和处理
+    console.log('[DEBUG] Running on Vercel, exporting app with attached Socket.IO'); // 新增日志
 } else {
     // 本地开发环境，使用传统模式
     const http = require('http').Server(app);

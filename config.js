@@ -31,7 +31,4 @@ module.exports = {
     newPlayerInitialPosition: "farthest",
     massLossRate: 1,
     minMassLoss: 50,
-    sqlinfo: {
-      fileName: "db.sqlite3",
-    }
 };
