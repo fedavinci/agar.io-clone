@@ -227,7 +227,8 @@ class AgarEnvironment(gym.Env):
             info: 额外信息  
         """  
         self.steps += 1  
-          
+        if self.steps < 2000:
+            action = self._rule_based_action()
         # 解析动作  
         target_x_rel, target_y_rel, split, eject = action  
           
@@ -281,6 +282,31 @@ class AgarEnvironment(gym.Env):
             'player_mass': self.agent_player.massTotal  
         }  
       
+    def _rule_based_action(self):
+        """模仿 JavaScript bot 的简单策略，返回动作向量 [dx, dy, split, eject]"""
+        player = self.agent_player
+        food_list = self.food
+        enemies = self.players
+
+        # 寻找最近食物
+        nearest_food = None
+        min_dist = float('inf')
+        for food in food_list:
+            dist = math.sqrt((player.x - food.x)**2 + (player.y - food.y)**2)
+            if dist < min_dist:
+                min_dist = dist
+                nearest_food = food
+
+        if nearest_food:
+            dx = nearest_food.x - player.x
+            dy = nearest_food.y - player.y
+            norm = math.sqrt(dx**2 + dy**2) + 1e-6
+            return [dx / norm, dy / norm, 0.0, 0.0]
+
+        # 没有食物就不动
+        return [0.0, 0.0, 0.0, 0.0]
+
+
     def render(self, mode='human'):  
         """渲染当前环境状态"""  
         # 这里可以实现简单的可视化  
