@@ -18,7 +18,12 @@
     "routes": [
         {
             "src": "/socket.io/(.*)",
-            "dest": "src/server/server.js"
+            "dest": "src/server/server.js",
+            "headers": {
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type"
+            }
         },
         {
             "src": "/api/(.*)",

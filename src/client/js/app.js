@@ -4,6 +4,14 @@ var ChatClient = require('./chat-client');
 var Canvas = require('./canvas');
 var global = require('./global');
 
+// 获取当前域名作为 Socket.IO 服务器地址
+const getServerUrl = () => {
+    if (window.location.hostname === 'localhost') {
+        return 'http://localhost:3000';
+    }
+    return window.location.origin;
+};
+
 var playerNameInput = document.getElementById('playerNameInput');
 var socket;
 
@@ -27,10 +35,10 @@ function startGame(type, roomId) {
     document.getElementById('startMenuWrapper').style.maxHeight = '0px';
     document.getElementById('gameAreaWrapper').style.opacity = 1;
     if (!socket) {
-        socket = io({
+        socket = io(getServerUrl(), {
             query: "type=" + type,
-            transports: ['websocket', 'polling'],
-            forceNew: true,
+            transports: ['polling', 'websocket'],
+            path: '/socket.io/',
             reconnection: true,
             reconnectionDelay: 1000,
             reconnectionDelayMax: 5000,
@@ -111,7 +119,15 @@ window.onload = function () {
     btnS.onclick = function () {
         showRoomListUI();
         if (!socket) {
-            socket = io({ query: "type=spectator" });
+            socket = io(getServerUrl(), {
+                query: "type=spectator",
+                transports: ['polling', 'websocket'],
+                path: '/socket.io/',
+                reconnection: true,
+                reconnectionDelay: 1000,
+                reconnectionDelayMax: 5000,
+                reconnectionAttempts: 5
+            });
             setupSocket(socket);
         }
         socket.emit('get_rooms');
@@ -122,7 +138,15 @@ window.onload = function () {
             nickErrorText.style.opacity = 0;
             showMatchingUI();
             if (!socket) {
-                socket = io({ query: "type=player" });
+                socket = io(getServerUrl(), {
+                    query: "type=player",
+                    transports: ['polling', 'websocket'],
+                    path: '/socket.io/',
+                    reconnection: true,
+                    reconnectionDelay: 1000,
+                    reconnectionDelayMax: 5000,
+                    reconnectionAttempts: 5
+                });
                 setupSocket(socket);
             }
             socket.emit('join_matchmaking');
