@@ -117,11 +117,15 @@ io.on('connection', function (socket) {
             if (pidx !== -1) room.players.splice(pidx, 1);
         });
 
-        // === 自动清理没有真人玩家的房间和AI ===
+        // === 自动清理房间和AI ===
         for (const [roomId, room] of Object.entries(activeRooms)) {
             // 只保留真人玩家
             const realPlayers = room.players.filter(pid => !pid.startsWith('AI_'));
-            if (realPlayers.length === 0) {
+            const remainingAIs = room.players.filter(pid => pid.startsWith('AI_'));
+
+            // 只有当没有真实玩家，且（没有观众或AI数量不足）时才清理房间
+            if (realPlayers.length === 0 &&
+                (room.spectators.length === 0 || remainingAIs.length <= 1)) {
                 // 删除房间内所有AI玩家
                 room.players.forEach(pid => {
                     if (pid.startsWith('AI_')) {
@@ -134,6 +138,19 @@ io.on('connection', function (socket) {
                 });
                 // 删除房间
                 delete activeRooms[roomId];
+            } else if (realPlayers.length === 0 && room.spectators.length > 0 && remainingAIs.length > 1) {
+                // 如果还有观众且有多个AI，通知观众AI继续对战
+                room.spectators.forEach(pid => {
+                    const psocket = io.sockets.sockets.get(pid);
+                    if (psocket) {
+                        psocket.emit('ai_continue', {
+                            roomId,
+                            aiCount: remainingAIs.length
+                        });
+                    }
+                });
+                // 更新房间状态，只保留AI
+                room.players = remainingAIs;
             }
         }
     });
@@ -488,38 +505,65 @@ function tryMatchWithAI() {
 }
 
 const tickGame = () => {
+    // 先处理AI移动，确保即使玩家死亡游戏也能继续
     map.players.data.forEach(player => {
         if (player.isAI) {
             tickAIPlayer(player);
         }
         tickPlayer(player);
     });
+
+    // 处理食物移动
     map.massFood.move(config.gameWidth, config.gameHeight);
+
+    // 处理碰撞
     map.players.handleCollisions(function (gotEaten, eater) {
         const cellGotEaten = map.players.getCell(gotEaten.playerIndex, gotEaten.cellIndex);
         if (!cellGotEaten) {
             console.warn('cellGotEaten is undefined', gotEaten, eater);
-            return; // 跳过本次处理，防止报错
+            return;
         }
+
+        // 更新吃掉玩家的质量
         map.players.data[eater.playerIndex].changeCellMass(eater.cellIndex, cellGotEaten.mass);
+
+        // 移除被吃掉的细胞
         const playerDied = map.players.removeCell(gotEaten.playerIndex, gotEaten.cellIndex);
+
         if (playerDied) {
             let playerGotEaten = map.players.data[gotEaten.playerIndex];
             io.emit('playerDied', { name: playerGotEaten.name });
-            if (!playerGotEaten.isAI) sockets[playerGotEaten.id].emit('RIP');
+
+            // 如果是真实玩家，发送RIP消息
+            if (!playerGotEaten.isAI) {
+                sockets[playerGotEaten.id].emit('RIP');
+            }
+
+            // 从地图中移除玩家
             map.players.removePlayerByIndex(gotEaten.playerIndex);
+
+            // 处理房间状态
             let roomId = null;
             for (const [rid, room] of Object.entries(activeRooms)) {
                 if (room.players.includes(playerGotEaten.id)) {
                     roomId = rid;
                     room.players = room.players.filter(pid => pid !== playerGotEaten.id);
-                    if (room.players.length <= 1) {
+
+                    // 检查房间中剩余的玩家
+                    const remainingPlayers = room.players.filter(pid => !pid.startsWith('AI_'));
+                    const remainingAIs = room.players.filter(pid => pid.startsWith('AI_'));
+
+                    // 只有当没有真实玩家且（没有观众或只剩1个AI）时才结束房间
+                    if (remainingPlayers.length === 0 &&
+                        (room.spectators.length === 0 || remainingAIs.length <= 1)) {
                         endRoom(roomId);
                     }
                     break;
                 }
             }
         }
+
+        // 更新排行榜
         calculateLeaderboard();
         for (const id in sockets) {
             sendLeaderboard(sockets[id]);
@@ -605,7 +649,36 @@ function endRoom(roomId) {
         if (room.players.length === 1) {
             winnerId = room.players[0];
         }
-        // 通知观众和玩家房间结束/胜利
+
+        // 如果房间中还有AI在对战，且有观众在观看，则不结束房间
+        const remainingAIs = room.players.filter(pid => pid.startsWith('AI_'));
+        if (remainingAIs.length > 1 && room.spectators.length > 0) {
+            // 只通知已死亡的玩家
+            room.players.forEach(pid => {
+                if (!pid.startsWith('AI_')) {
+                    const psocket = io.sockets.sockets.get(pid);
+                    if (psocket) {
+                        psocket.leave(roomId);
+                        psocket.emit('room_ended', { roomId });
+                    }
+                }
+            });
+            // 更新房间状态
+            room.players = remainingAIs;
+            // 通知观众AI继续对战
+            room.spectators.forEach(pid => {
+                const psocket = io.sockets.sockets.get(pid);
+                if (psocket) {
+                    psocket.emit('ai_continue', {
+                        roomId,
+                        aiCount: remainingAIs.length
+                    });
+                }
+            });
+            return; // 不删除房间，让AI继续
+        }
+
+        // 如果没有观众或只剩一个AI，则正常结束房间
         room.players.forEach(pid => {
             const psocket = io.sockets.sockets.get(pid);
             if (psocket) {
@@ -625,7 +698,7 @@ function endRoom(roomId) {
             }
         });
         delete activeRooms[roomId];
-        // 新增：主动推送房间列表
+        // 主动推送房间列表
         broadcastRoomList();
     }
 }
@@ -634,8 +707,9 @@ function endRoom(roomId) {
 function tickAIPlayer(aiPlayer) {
     if (!aiPlayer.isAI) return;
     if (!aiPlayer.cells || aiPlayer.cells.length === 0) return;
-    // 日志：AI主坐标、cells.length、cells[0]坐标
+
     console.log(`[AI][${aiPlayer.id}] [tickAIPlayer] 主坐标: (${aiPlayer.x},${aiPlayer.y}), cells.length: ${aiPlayer.cells.length}, cells[0]:`, aiPlayer.cells[0] ? `(${aiPlayer.cells[0].x},${aiPlayer.cells[0].y})` : 'null');
+
     let myRoom = null;
     for (const [rid, room] of Object.entries(activeRooms)) {
         if (room.players.includes(aiPlayer.id)) {
@@ -645,18 +719,21 @@ function tickAIPlayer(aiPlayer) {
     }
     if (!myRoom) return;
 
-    // 1. 强制同步massTotal为cells质量总和
+    // 强制同步massTotal为cells质量总和
     aiPlayer.massTotal = aiPlayer.cells && aiPlayer.cells.length > 0
         ? aiPlayer.cells.reduce((sum, c) => sum + c.mass, 0)
         : config.defaultPlayerMass + 2;
 
-    const allPlayers = map.players.data.filter(p => !p.isAI);
+    // 获取所有玩家，包括AI
+    const allPlayers = map.players.data;
     const allFood = map.food.data;
 
     // 日志：AI和所有玩家的massTotal、坐标
     console.log(`[AI][${aiPlayer.id}] massTotal: ${aiPlayer.massTotal}, 坐标: (${aiPlayer.x},${aiPlayer.y}), cells.length: ${aiPlayer.cells ? aiPlayer.cells.length : 0}`);
     allPlayers.forEach(p => {
-        console.log(`[AI][${aiPlayer.id}] 玩家(${p.id}) massTotal: ${p.massTotal}, 坐标: (${p.x},${p.y})`);
+        if (p.id !== aiPlayer.id) {
+            console.log(`[AI][${aiPlayer.id}] 其他实体(${p.id}) massTotal: ${p.massTotal}, 坐标: (${p.x},${p.y})`);
+        }
     });
     console.log(`[AI][${aiPlayer.id}] 食物数: ${allFood.length}`);
     console.log(`[AI][${aiPlayer.id}] 当前target:`, aiPlayer.target);
@@ -664,64 +741,63 @@ function tickAIPlayer(aiPlayer) {
     // ====== AI智能决策 ======
     const THREAT_DIST = 400; // 逃离阈值
     const PREY_DIST = 300;   // 追逐阈值
+    const FOOD_DIST = 200;   // 食物吸引阈值
 
-    // 1. 逃离最近的威胁（距离近才逃）
-    const threats = allPlayers.filter(p => p.massTotal > aiPlayer.massTotal);
+    // 1. 检查是否有威胁（更大的玩家在附近）
+    const threats = allPlayers.filter(p =>
+        p.id !== aiPlayer.id &&
+        p.massTotal > aiPlayer.massTotal * 1.1
+    );
+
     if (threats.length > 0) {
         const { entity: threat, dist } = getNearestEntity(aiPlayer, threats);
         if (threat && dist < THREAT_DIST) {
+            // 逃离威胁
             aiPlayer.target = {
-                x: aiPlayer.x + (aiPlayer.x - threat.x),
-                y: aiPlayer.y + (aiPlayer.y - threat.y)
+                x: aiPlayer.x + (aiPlayer.x - threat.x) * 2,
+                y: aiPlayer.y + (aiPlayer.y - threat.y) * 2
             };
-            aiPlayer._chaseTicks = 0;
-            console.log(`[AI][${aiPlayer.id}] 逃离 玩家(${threat.id}) 距离:${dist} 目标:`, aiPlayer.target);
+            console.log(`[AI][${aiPlayer.id}] 逃离 实体(${threat.id}) 距离:${dist} 目标:`, aiPlayer.target);
             return;
         }
     }
 
-    // 2. 追逐最近的猎物（距离近才追）
-    const preys = allPlayers.filter(p => p.massTotal < aiPlayer.massTotal);
+    // 2. 寻找可以吃的目标（较小的玩家）
+    const preys = allPlayers.filter(p =>
+        p.id !== aiPlayer.id &&
+        p.massTotal * 1.1 < aiPlayer.massTotal
+    );
+
     if (preys.length > 0) {
         const { entity: prey, dist } = getNearestEntity(aiPlayer, preys);
         if (prey && dist < PREY_DIST) {
+            // 追逐猎物
             aiPlayer.target = { x: prey.x, y: prey.y };
-            aiPlayer._chaseTicks = 0;
-            console.log(`[AI][${aiPlayer.id}] 追逐 玩家(${prey.id}) 距离:${dist} 目标:`, aiPlayer.target);
+            console.log(`[AI][${aiPlayer.id}] 追逐 实体(${prey.id}) 距离:${dist} 目标:`, aiPlayer.target);
             return;
         }
     }
 
-    // 3. 吃最近的球
+    // 3. 如果没有威胁和猎物，寻找最近的食物
     if (allFood.length > 0) {
-        if (aiPlayer._chaseTicks === undefined) aiPlayer._chaseTicks = 0;
-        if (aiPlayer.target) {
-            aiPlayer._chaseTicks++;
-            const distToTarget = Math.sqrt(Math.pow(aiPlayer.x - aiPlayer.target.x, 2) + Math.pow(aiPlayer.y - aiPlayer.target.y, 2));
-            const nearFood = allFood.some(f => Math.abs(f.x - aiPlayer.target.x) < 50 && Math.abs(f.y - aiPlayer.target.y) < 50);
-            console.log(`[AI][${aiPlayer.id}] 追食物tick: 坐标(${aiPlayer.x},${aiPlayer.y}) target(${aiPlayer.target.x},${aiPlayer.target.y}) 距离:${distToTarget} nearFood:${nearFood} _chaseTicks:${aiPlayer._chaseTicks}`);
-            if (distToTarget < 100 || !nearFood || aiPlayer._chaseTicks > AI_MAX_CHASE_TICKS) {
-                console.log(`[AI][${aiPlayer.id}] 追逐超时/目标无食物/已到达，重置target，distToTarget:${distToTarget} nearFood:${nearFood} _chaseTicks:${aiPlayer._chaseTicks}`);
-                aiPlayer.target = null;
-                aiPlayer._chaseTicks = 0;
-            }
-        }
-        if (!aiPlayer.target) {
-            const { entity: food, dist } = getNearestEntity(aiPlayer, allFood);
-            if (food) {
-                aiPlayer.target = { x: food.x, y: food.y };
-                aiPlayer._chaseTicks = 0;
-                console.log(`[AI][${aiPlayer.id}] 重新锁定最近食物: (${food.x},${food.y}) 距离:${dist}`);
-                return;
-            }
-        } else {
+        const { entity: food, dist } = getNearestEntity(aiPlayer, allFood);
+        if (food && dist < FOOD_DIST) {
+            aiPlayer.target = { x: food.x, y: food.y };
+            console.log(`[AI][${aiPlayer.id}] 寻找食物 距离:${dist} 目标:`, aiPlayer.target);
             return;
         }
     }
 
-    aiPlayer.target = null;
-    aiPlayer._chaseTicks = 0;
-    console.log(`[AI][${aiPlayer.id}] 没有目标，原地不动`);
+    // 4. 如果什么都没找到，随机移动
+    if (!aiPlayer.target || (Math.random() < 0.05)) { // 5%概率改变方向
+        const angle = Math.random() * Math.PI * 2;
+        const distance = 100 + Math.random() * 200; // 随机100-300范围内的距离
+        aiPlayer.target = {
+            x: aiPlayer.x + Math.cos(angle) * distance,
+            y: aiPlayer.y + Math.sin(angle) * distance
+        };
+        console.log(`[AI][${aiPlayer.id}] 随机移动 目标:`, aiPlayer.target);
+    }
 }
 
 setInterval(tickGame, 1000 / 60);
