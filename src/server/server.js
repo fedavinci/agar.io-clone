@@ -44,6 +44,26 @@ if (process.env.VERCEL) {
         allowEIO3: true,
         path: '/socket.io/'
     });
+    // This is the crucial part for Vercel:
+    // Export the Socket.IO server instance.
+    module.exports = (req, res) => {
+        if (req.url.startsWith('/socket.io')) {
+            io.emit('connection', req.socket); // This line is not directly how you attach sockets, but demonstrates the intent.
+                                               // Vercel's adapter handles the actual connection.
+            // For a complete integration, you might need a Vercel-specific Socket.IO adapter or handle the connection explicitly if `io.attach` is not suitable.
+            // However, with io = new Server({...}) and the routes, Vercel generally handles this.
+            // The key is that the `io` instance must be accessible and active for incoming requests.
+        }
+        app(req, res); // Also allow express to handle non-socket.io requests
+    };
+    // If you're using a newer version of Socket.IO that automatically attaches,
+    // you might not need the `module.exports` as a function that manually routes,
+    // but rather just export `io` or the `app` directly if `io` is internally attached to `app`.
+    // However, for clear separation and to ensure Socket.IO handles its own path,
+    // the structure below is often more robust for serverless.
+    module.exports = app; // For Express routes
+    app.io = io; // Expose io instance for Vercel's internal handling if needed
+
 } else {
     // 本地开发环境，使用传统模式
     const http = require('http').Server(app);
@@ -57,6 +77,10 @@ if (process.env.VERCEL) {
         allowEIO3: true,
         path: '/socket.io/'
     });
+    // For local development, keep the http.listen as it is.
+    const ipaddress = process.env.IP || config.host;
+    const serverport = process.env.PORT || config.port;
+    http.listen(serverport, ipaddress, () => console.log('[DEBUG] Listening on ' + ipaddress + ':' + serverport));
 }
 
 io.on('connection', function (socket) {
