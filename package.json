@@ -8,7 +8,7 @@
     "start": "gulp run",
     "watch": "gulp watch",
     "test": "gulp test",
-    "vercel-build": "gulp build && mkdir -p dist && cp -r src/client/* dist/"
+    "vercel-build": "npm install && gulp build"
   },
   "repository": {
     "type": "git",
