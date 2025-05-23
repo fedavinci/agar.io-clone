@@ -641,18 +641,77 @@ const updateSpectator = (socketID) => {
 }
 
 // ========== 游戏结束时清理房间 ========== //
-function endRoom(roomId) {
+// function endRoom(roomId) {
+//     const room = activeRooms[roomId];
+//     if (room) {
+//         // 判断赢家（最后剩下的玩家）
+//         let winnerId = null;
+//         if (room.players.length === 1) {
+//             winnerId = room.players[0];
+//         }
+
+//         // 如果房间中还有AI在对战，且有观众在观看，则不结束房间
+//         const remainingAIs = room.players.filter(pid => pid.startsWith('AI_'));
+//         if (remainingAIs.length > 1 && room.spectators.length > 0) {
+//             // 只通知已死亡的玩家
+//             room.players.forEach(pid => {
+//                 if (!pid.startsWith('AI_')) {
+//                     const psocket = io.sockets.sockets.get(pid);
+//                     if (psocket) {
+//                         psocket.leave(roomId);
+//                         psocket.emit('room_ended', { roomId });
+//                     }
+//                 }
+//             });
+//             // 更新房间状态
+//             room.players = remainingAIs;
+//             // 通知观众AI继续对战
+//             room.spectators.forEach(pid => {
+//                 const psocket = io.sockets.sockets.get(pid);
+//                 if (psocket) {
+//                     psocket.emit('ai_continue', {
+//                         roomId,
+//                         aiCount: remainingAIs.length
+//                     });
+//                 }
+//             });
+//             return; // 不删除房间，让AI继续
+//         }
+
+//         // 如果没有观众或只剩一个AI，则正常结束房间
+//         room.players.forEach(pid => {
+//             const psocket = io.sockets.sockets.get(pid);
+//             if (psocket) {
+//                 psocket.leave(roomId);
+//                 if (winnerId && pid === winnerId) {
+//                     psocket.emit('win', { roomId });
+//                 } else {
+//                     psocket.emit('room_ended', { roomId });
+//                 }
+//             }
+//         });
+//         room.spectators.forEach(pid => {
+//             const psocket = io.sockets.sockets.get(pid);
+//             if (psocket) {
+//                 psocket.leave(roomId);
+//                 psocket.emit('room_ended', { roomId });
+//             }
+//         });
+//         delete activeRooms[roomId];
+//         // 主动推送房间列表
+//         broadcastRoomList();
+//     }
+// }
+
+function endRoom(roomId, winner = null) {
     const room = activeRooms[roomId];
     if (room) {
-        // 判断赢家（最后剩下的玩家）
-        let winnerId = null;
-        if (room.players.length === 1) {
-            winnerId = room.players[0];
-        }
+        // 判断赢家（最后剩下的玩家或超时指定的获胜者）
+        let winnerId = winner ? winner.id : (room.players.length === 1 ? room.players[0] : null);
 
         // 如果房间中还有AI在对战，且有观众在观看，则不结束房间
         const remainingAIs = room.players.filter(pid => pid.startsWith('AI_'));
-        if (remainingAIs.length > 1 && room.spectators.length > 0) {
+        if (remainingAIs.length > 1 && room.spectators.length > 0 && !winner) {
             // 只通知已死亡的玩家
             room.players.forEach(pid => {
                 if (!pid.startsWith('AI_')) {
@@ -660,6 +719,9 @@ function endRoom(roomId) {
                     if (psocket) {
                         psocket.leave(roomId);
                         psocket.emit('room_ended', { roomId });
+                        // 移除非 AI 玩家
+                        const playerIndex = map.players.findIndexByID(pid);
+                        if (playerIndex > -1) map.players.removePlayerByIndex(playerIndex);
                     }
                 }
             });
@@ -678,27 +740,30 @@ function endRoom(roomId) {
             return; // 不删除房间，让AI继续
         }
 
-        // 如果没有观众或只剩一个AI，则正常结束房间
+        // 如果没有观众或只剩一个AI，或是超时结束，则正常结束房间
         room.players.forEach(pid => {
             const psocket = io.sockets.sockets.get(pid);
             if (psocket) {
                 psocket.leave(roomId);
                 if (winnerId && pid === winnerId) {
-                    psocket.emit('win', { roomId });
+                    psocket.emit('win', { roomId, winner: winner ? { name: winner.name, massTotal: winner.massTotal } : null });
                 } else {
-                    psocket.emit('room_ended', { roomId });
+                    psocket.emit('room_ended', { roomId, winner: winner ? { name: winner.name, massTotal: winner.massTotal } : null });
                 }
             }
+            // 移除玩家
+            const playerIndex = map.players.findIndexByID(pid);
+            if (playerIndex > -1) map.players.removePlayerByIndex(playerIndex);
         });
         room.spectators.forEach(pid => {
             const psocket = io.sockets.sockets.get(pid);
             if (psocket) {
                 psocket.leave(roomId);
-                psocket.emit('room_ended', { roomId });
+                psocket.emit('room_ended', { roomId, winner: winner ? { name: winner.name, massTotal: winner.massTotal } : null });
             }
         });
+        console.log(`[INFO] Room ${roomId} ended. Winner: ${winner ? `${winner.name} (mass: ${winner.massTotal})` : 'None'}`);
         delete activeRooms[roomId];
-        // 主动推送房间列表
         broadcastRoomList();
     }
 }
@@ -800,9 +865,27 @@ function tickAIPlayer(aiPlayer) {
     }
 }
 
+function checkRoomTimeouts() {
+    const now = Date.now();
+    for (const [roomId, room] of Object.entries(activeRooms)) {
+        console.log(now)
+        console.log(room.createdAt)
+        if (now - room.createdAt >= config.gameMaxTime) {
+            console.log('xxx')
+            let winner = room.players.reduce((top, pid) => {
+                const idx = map.players.findIndexByID(pid);
+                if (idx > -1 && map.players.data[idx].massTotal > (top?.massTotal || -1)) return map.players.data[idx];
+                return top;
+            }, null);
+            endRoom(roomId, winner);
+        }
+    }
+}
+
 setInterval(tickGame, 1000 / 60);
 setInterval(gameloop, 1000);
 setInterval(sendUpdates, 1000 / config.networkUpdateFactor);
+setInterval(checkRoomTimeouts, 1000);
 
 // Don't touch, IP configurations.
 var ipaddress = process.env.OPENSHIFT_NODEJS_IP || process.env.IP || config.host;
