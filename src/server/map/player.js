@@ -309,11 +309,35 @@ exports.PlayerManager = class {
     }
 
     removeCell(playerIndex, cellIndex) {
+        if (playerIndex < 0 || playerIndex >= this.data.length) {
+            console.warn('removeCell: Invalid playerIndex', playerIndex, 'data.length:', this.data.length);
+            return false;
+        }
+        if (!this.data[playerIndex] || !this.data[playerIndex].cells) {
+            console.warn('removeCell: Player or cells undefined', playerIndex);
+            return false;
+        }
+        if (cellIndex < 0 || cellIndex >= this.data[playerIndex].cells.length) {
+            console.warn('removeCell: Invalid cellIndex', cellIndex, 'cells.length:', this.data[playerIndex].cells.length);
+            return false;
+        }
         return this.data[playerIndex].removeCell(cellIndex);
     }
 
     getCell(playerIndex, cellIndex) {
-        return this.data[playerIndex].cells[cellIndex]
+        if (playerIndex < 0 || playerIndex >= this.data.length) {
+            console.warn('getCell: Invalid playerIndex', playerIndex, 'data.length:', this.data.length);
+            return null;
+        }
+        if (!this.data[playerIndex] || !this.data[playerIndex].cells) {
+            console.warn('getCell: Player or cells undefined', playerIndex);
+            return null;
+        }
+        if (cellIndex < 0 || cellIndex >= this.data[playerIndex].cells.length) {
+            console.warn('getCell: Invalid cellIndex', cellIndex, 'cells.length:', this.data[playerIndex].cells.length);
+            return null;
+        }
+        return this.data[playerIndex].cells[cellIndex];
     }
 
     handleCollisions(callback) {

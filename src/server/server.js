@@ -544,55 +544,63 @@ const tickGame = () => {
         }
 
         // 更新吃掉玩家的质量
-        map.players.data[eater.playerIndex].changeCellMass(eater.cellIndex, cellGotEaten.mass);
+        if (eater.playerIndex >= 0 && eater.playerIndex < map.players.data.length && map.players.data[eater.playerIndex]) {
+            map.players.data[eater.playerIndex].changeCellMass(eater.cellIndex, cellGotEaten.mass);
+        } else {
+            console.warn('Invalid eater.playerIndex:', eater.playerIndex, 'data.length:', map.players.data.length);
+            return;
+        }
 
         // 移除被吃掉的细胞
         const playerDied = map.players.removeCell(gotEaten.playerIndex, gotEaten.cellIndex);
 
         if (playerDied) {
-            let playerGotEaten = map.players.data[gotEaten.playerIndex];
-            io.emit('playerDied', { name: playerGotEaten.name });
+            // 修复：添加边界检查
+            if (gotEaten.playerIndex >= 0 && gotEaten.playerIndex < map.players.data.length && map.players.data[gotEaten.playerIndex]) {
+                let playerGotEaten = map.players.data[gotEaten.playerIndex];
+                io.emit('playerDied', { name: playerGotEaten.name });
 
-            // 如果是真实玩家，发送RIP消息
-            if (!playerGotEaten.isAI) {
-                sockets[playerGotEaten.id].emit('RIP');
-            }
+                // 如果是真实玩家，发送RIP消息
+                if (!playerGotEaten.isAI) {
+                    sockets[playerGotEaten.id].emit('RIP');
+                }
 
-            // 从地图中移除玩家
-            map.players.removePlayerByIndex(gotEaten.playerIndex);
+                // 从地图中移除玩家
+                map.players.removePlayerByIndex(gotEaten.playerIndex);
 
-            // 处理房间状态
-            let roomId = null;
-            for (const [rid, room] of Object.entries(activeRooms)) {
-                if (room.players.includes(playerGotEaten.id)) {
-                    roomId = rid;
-                    room.players = room.players.filter(pid => pid !== playerGotEaten.id);
+                // 处理房间状态
+                let roomId = null;
+                for (const [rid, room] of Object.entries(activeRooms)) {
+                    if (room.players.includes(playerGotEaten.id)) {
+                        roomId = rid;
+                        room.players = room.players.filter(pid => pid !== playerGotEaten.id);
 
-                    // 检查房间中剩余的玩家
-                    const remainingPlayers = room.players.filter(pid => !pid.startsWith('AI_'));
-                    const remainingAIs = room.players.filter(pid => pid.startsWith('AI_'));
-                    const totalRemainingPlayers = remainingPlayers.length + remainingAIs.length;
+                        // 检查房间中剩余的玩家
+                        const remainingPlayers = room.players.filter(pid => !pid.startsWith('AI_'));
+                        const remainingAIs = room.players.filter(pid => pid.startsWith('AI_'));
+                        const totalRemainingPlayers = remainingPlayers.length + remainingAIs.length;
 
-                    // 修复：当只剩1个玩家时游戏结束（无论是真实玩家还是AI）
-                    if (totalRemainingPlayers <= 1) {
-                        endRoom(roomId);
+                        // 修复：当只剩1个玩家时游戏结束（无论是真实玩家还是AI）
+                        if (totalRemainingPlayers <= 1) {
+                            endRoom(roomId);
+                        }
+                        // 如果还有多个玩家但没有真实玩家，且有观众，让AI继续对战
+                        else if (remainingPlayers.length === 0 && remainingAIs.length > 1 && room.spectators.length > 0) {
+                            // 通知观众AI继续对战
+                            room.spectators.forEach(pid => {
+                                const psocket = io.sockets.sockets.get(pid);
+                                if (psocket) {
+                                    psocket.emit('ai_continue', {
+                                        roomId,
+                                        aiCount: remainingAIs.length
+                                    });
+                                }
+                            });
+                            // 更新房间状态，只保留AI
+                            room.players = remainingAIs;
+                        }
+                        break;
                     }
-                    // 如果还有多个玩家但没有真实玩家，且有观众，让AI继续对战
-                    else if (remainingPlayers.length === 0 && remainingAIs.length > 1 && room.spectators.length > 0) {
-                        // 通知观众AI继续对战
-                        room.spectators.forEach(pid => {
-                            const psocket = io.sockets.sockets.get(pid);
-                            if (psocket) {
-                                psocket.emit('ai_continue', {
-                                    roomId,
-                                    aiCount: remainingAIs.length
-                                });
-                            }
-                        });
-                        // 更新房间状态，只保留AI
-                        room.players = remainingAIs;
-                    }
-                    break;
                 }
             }
         }
@@ -679,6 +687,14 @@ function endRoom(roomId, winner = null) {
     const room = activeRooms[roomId];
     if (room) {
         console.log('[DEBUG] Ending room:', roomId, 'with players:', room.players, 'spectators:', room.spectators);
+
+        // 修复：添加安全检查防止undefined访问
+        if (!room.players || !Array.isArray(room.players)) {
+            console.warn('endRoom: room.players is invalid:', room.players);
+            delete activeRooms[roomId];
+            broadcastRoomList();
+            return;
+        }
 
         // 判断赢家（最后剩下的玩家或超时指定的获胜者）
         let winnerId = winner ? winner.id : (room.players.length === 1 ? room.players[0] : null);
