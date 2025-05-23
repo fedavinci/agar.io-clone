@@ -5,6 +5,7 @@ module.exports = {
     foodMass: 1,
     fireFood: 20,
     limitSplit: 16,
+    gameMaxTime: 60 * 6 * 1000,
     defaultPlayerMass: 10,
     virus: {
         fill: "#33ff33",
