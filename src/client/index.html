@@ -90,15 +90,27 @@
                 // 直接显示房间列表，不显示主菜单
                 document.getElementById('startMenuWrapper')?.style.setProperty('display', 'none');
                 document.getElementById('roomListWrapper')?.style.setProperty('display', 'block');
-                // 主动请求房间列表
-                function tryEmitRooms() {
-                    if (window.socket) {
-                        window.socket.emit('get_rooms');
-                    } else {
-                        setTimeout(tryEmitRooms, 200);
-                    }
+
+                // 主动创建spectator socket连接
+                if (!window.socket) {
+                    window.socket = io({ query: "type=spectator" });
+                    // 等待app.js加载完成后设置socket
+                    const waitForSetup = () => {
+                        if (window.setupSocket) {
+                            window.setupSocket(window.socket);
+                            // socket连接建立后请求房间列表
+                            window.socket.on('connect', () => {
+                                window.socket.emit('get_rooms');
+                            });
+                        } else {
+                            setTimeout(waitForSetup, 100);
+                        }
+                    };
+                    waitForSetup();
+                } else {
+                    // 如果socket已存在，直接请求房间列表
+                    window.socket.emit('get_rooms');
                 }
-                tryEmitRooms();
             }
         });
         window.addEventListener('message', function (event) {

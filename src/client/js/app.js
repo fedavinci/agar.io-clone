@@ -7,6 +7,9 @@ var global = require('./global');
 var playerNameInput = document.getElementById('playerNameInput');
 var socket;
 
+// 暴露socket为全局变量
+window.socket = socket;
+
 var debug = function (args) {
     if (console && console.log) {
         console.log(args);
@@ -28,6 +31,7 @@ function startGame(type, roomId) {
     document.getElementById('gameAreaWrapper').style.opacity = 1;
     if (!socket) {
         socket = io({ query: "type=" + type });
+        window.socket = socket;
         setupSocket(socket);
     }
     if (!global.animLoopHandle)
@@ -104,6 +108,7 @@ window.onload = function () {
         showRoomListUI();
         if (!socket) {
             socket = io({ query: "type=spectator" });
+            window.socket = socket;
             setupSocket(socket);
         }
         socket.emit('get_rooms');
@@ -115,6 +120,7 @@ window.onload = function () {
             showMatchingUI();
             if (!socket) {
                 socket = io({ query: "type=player" });
+                window.socket = socket;
                 setupSocket(socket);
             }
             socket.emit('join_matchmaking');
@@ -520,3 +526,6 @@ if (backToMenuBtn) {
         }
     };
 }
+
+// 暴露setupSocket为全局函数，以便index.html可以调用
+window.setupSocket = setupSocket;
