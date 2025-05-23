@@ -81,36 +81,61 @@
         }
         document.addEventListener('DOMContentLoaded', function () {
             const mode = getQueryParam('mode');
+            console.log('[DEBUG] Mode detected:', mode);
+
             if (mode === 'play') {
                 document.getElementById('startMenuWrapper')?.style.setProperty('display', 'block');
                 document.getElementById('spectateButton')?.style.setProperty('display', 'none');
                 document.getElementById('settingsButton')?.style.setProperty('display', 'none');
             }
             if (mode === 'betting') {
+                console.log('[DEBUG] Entering betting mode');
                 // 直接显示房间列表，不显示主菜单
                 document.getElementById('startMenuWrapper')?.style.setProperty('display', 'none');
                 document.getElementById('roomListWrapper')?.style.setProperty('display', 'block');
 
-                // 主动创建spectator socket连接
-                if (!window.socket) {
-                    window.socket = io({ query: "type=spectator" });
-                    // 等待app.js加载完成后设置socket
-                    const waitForSetup = () => {
-                        if (window.setupSocket) {
-                            window.setupSocket(window.socket);
-                            // socket连接建立后请求房间列表
-                            window.socket.on('connect', () => {
-                                window.socket.emit('get_rooms');
-                            });
-                        } else {
-                            setTimeout(waitForSetup, 100);
-                        }
-                    };
-                    waitForSetup();
-                } else {
-                    // 如果socket已存在，直接请求房间列表
-                    window.socket.emit('get_rooms');
-                }
+                // 等待所有脚本加载完成
+                setTimeout(() => {
+                    console.log('[DEBUG] Starting socket initialization');
+                    // 主动创建spectator socket连接
+                    if (!window.socket) {
+                        console.log('[DEBUG] Creating socket connection');
+                        window.socket = io({ query: "type=spectator" });
+
+                        // 等待setupSocket函数可用
+                        const waitForSetup = () => {
+                            if (window.setupSocket && typeof window.setupSocket === 'function') {
+                                console.log('[DEBUG] Setting up socket listeners');
+                                window.setupSocket(window.socket);
+
+                                // 监听连接事件
+                                window.socket.on('connect', () => {
+                                    console.log('[DEBUG] Socket connected, requesting rooms');
+                                    window.socket.emit('get_rooms');
+                                });
+
+                                // 监听room_list事件进行调试
+                                window.socket.on('room_list', (rooms) => {
+                                    console.log('[DEBUG] Received room_list:', rooms);
+                                });
+
+                                // 如果已经连接，立即请求房间列表
+                                if (window.socket.connected) {
+                                    console.log('[DEBUG] Socket already connected, requesting rooms');
+                                    window.socket.emit('get_rooms');
+                                }
+                            } else {
+                                console.log('[DEBUG] Waiting for setupSocket function...');
+                                setTimeout(waitForSetup, 100);
+                            }
+                        };
+                        waitForSetup();
+                    } else {
+                        console.log('[DEBUG] Socket already exists, requesting rooms');
+                        // 如果socket已存在，直接请求房间列表
+                        window.socket.emit('get_rooms');
+                    }
+                }, 500); // 增加延迟确保所有脚本加载完成
             }
         });
         window.addEventListener('message', function (event) {

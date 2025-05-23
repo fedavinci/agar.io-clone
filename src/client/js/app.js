@@ -16,6 +16,10 @@ var debug = function (args) {
     }
 };
 
+// 预声明setupSocket函数为全局变量
+window.setupSocket = null;
+console.log('[DEBUG] app.js loaded, will expose setupSocket when defined');
+
 if (/Android|webOS|iPhone|iPad|iPod|BlackBerry/i.test(navigator.userAgent)) {
     global.mobile = true;
 }
@@ -219,6 +223,8 @@ function handleDisconnect() {
 
 // socket stuff.
 function setupSocket(socket) {
+    console.log('[DEBUG] setupSocket called with socket:', socket);
+
     // Handle ping.
     socket.on('pongcheck', function () {
         var latency = Date.now() - global.startPingTime;
@@ -346,6 +352,7 @@ function setupSocket(socket) {
         startGame('player', data.roomId);
     });
     socket.on('room_list', function (rooms) {
+        console.log('[DEBUG] room_list event received with rooms:', rooms);
         renderRoomList(rooms);
     });
     socket.on('spectate_joined', function (data) {
@@ -365,6 +372,10 @@ function setupSocket(socket) {
         showResultUI('你赢了！');
     });
 }
+
+// 立即暴露setupSocket为全局函数
+window.setupSocket = setupSocket;
+console.log('[DEBUG] setupSocket function exposed globally');
 
 const isUnnamedCell = (name) => name.length < 1;
 
@@ -468,6 +479,9 @@ function resize() {
 
 // ========== 渲染房间列表和观战按钮 ========== //
 function renderRoomList(rooms) {
+    console.log('[DEBUG] renderRoomList called with rooms:', rooms);
+    console.log('[DEBUG] roomListWrapper element:', roomListWrapper);
+
     if (!roomListWrapper) return;
     // 先清空，防止事件重复绑定
     roomListWrapper.innerHTML = '';
@@ -526,6 +540,3 @@ if (backToMenuBtn) {
         }
     };
 }
-
-// 暴露setupSocket为全局函数，以便index.html可以调用
-window.setupSocket = setupSocket;
