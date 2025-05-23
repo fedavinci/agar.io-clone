@@ -16,8 +16,12 @@ var global = require('./global');
 var playerNameInput = document.getElementById('playerNameInput');
 var socket;
 
-// 暴露socket为全局变量
-window.socket = socket;
+// 修复：确保socket变量同步到window.socket
+function updateGlobalSocket(newSocket) {
+    socket = newSocket;
+    window.socket = newSocket;
+    console.log('[DEBUG] Global socket updated:', !!newSocket);
+}
 
 var debug = function (args) {
     if (console && console.log) {
@@ -43,9 +47,9 @@ function startGame(type, roomId) {
     document.getElementById('startMenuWrapper').style.maxHeight = '0px';
     document.getElementById('gameAreaWrapper').style.opacity = 1;
     if (!socket) {
-        socket = io({ query: "type=" + type });
-        window.socket = socket;
-        setupSocket(socket);
+        const newSocket = io({ query: "type=" + type });
+        updateGlobalSocket(newSocket);
+        setupSocket(newSocket);
     }
     if (!global.animLoopHandle)
         animloop();
@@ -120,9 +124,9 @@ window.onload = function () {
     btnS.onclick = function () {
         showRoomListUI();
         if (!socket) {
-            socket = io({ query: "type=spectator" });
-            window.socket = socket;
-            setupSocket(socket);
+            const newSocket = io({ query: "type=spectator" });
+            updateGlobalSocket(newSocket);
+            setupSocket(newSocket);
         }
         socket.emit('get_rooms');
     };
@@ -132,9 +136,9 @@ window.onload = function () {
             nickErrorText.style.opacity = 0;
             showMatchingUI();
             if (!socket) {
-                socket = io({ query: "type=player" });
-                window.socket = socket;
-                setupSocket(socket);
+                const newSocket = io({ query: "type=player" });
+                updateGlobalSocket(newSocket);
+                setupSocket(newSocket);
             }
             socket.emit('join_matchmaking');
         } else {
@@ -511,22 +515,27 @@ function renderRoomList(rooms) {
             btn.onclick = function () {
                 const roomId = this.getAttribute('data-room');
                 console.log('[DEBUG] Spectate button clicked for room:', roomId);
-                console.log('[DEBUG] Socket exists:', !!socket);
-                console.log('[DEBUG] Socket connected:', socket ? socket.connected : false);
 
-                if (socket && socket.connected) {
+                // 修复：使用全局window.socket而不是局部socket
+                const currentSocket = window.socket || socket;
+                console.log('[DEBUG] Socket exists:', !!currentSocket);
+                console.log('[DEBUG] Socket connected:', currentSocket ? currentSocket.connected : false);
+                console.log('[DEBUG] window.socket exists:', !!window.socket);
+                console.log('[DEBUG] local socket exists:', !!socket);
+
+                if (currentSocket && currentSocket.connected) {
                     console.log('[DEBUG] Emitting spectate_room event');
-                    socket.emit('spectate_room', { roomId });
-                } else if (socket && !socket.connected) {
+                    currentSocket.emit('spectate_room', { roomId });
+                } else if (currentSocket && !currentSocket.connected) {
                     console.log('[DEBUG] Socket exists but not connected, waiting...');
                     this.innerText = '连接中...';
                     this.disabled = true;
 
                     // 等待连接完成
                     const waitForConnection = () => {
-                        if (socket.connected) {
+                        if (currentSocket.connected) {
                             console.log('[DEBUG] Socket connected, now emitting spectate_room');
-                            socket.emit('spectate_room', { roomId });
+                            currentSocket.emit('spectate_room', { roomId });
                             this.innerText = '观战';
                             this.disabled = false;
                         } else {
@@ -536,6 +545,8 @@ function renderRoomList(rooms) {
                     waitForConnection();
                 } else {
                     console.error('[ERROR] No socket connection for spectating');
+                    console.error('[ERROR] window.socket:', window.socket);
+                    console.error('[ERROR] local socket:', socket);
                     alert('正在连接服务器，请稍后再试');
                 }
             };

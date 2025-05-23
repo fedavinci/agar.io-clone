@@ -117,7 +117,16 @@
                         console.log('[DEBUG] Creating socket connection');
                         roomListWrapper.innerHTML = '<div>正在连接游戏服务器...</div>';
 
-                        window.socket = io({ query: "type=spectator" });
+                        // 修复：创建socket并正确设置全局引用
+                        const newSocket = io({ query: "type=spectator" });
+                        window.socket = newSocket;
+
+                        // 确保局部socket变量也同步（如果存在）
+                        if (typeof socket !== 'undefined') {
+                            socket = newSocket;
+                        }
+
+                        console.log('[DEBUG] Socket created and assigned to window.socket:', !!window.socket);
 
                         // 监听连接状态
                         window.socket.on('connect', () => {
