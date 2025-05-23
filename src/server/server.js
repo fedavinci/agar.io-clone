@@ -31,44 +31,18 @@ let aiTimeout = null;
 
 app.use(express.static(__dirname + '/../client'));
 
-let io;
-if (process.env.VERCEL) {
-    // Vercel 环境下，使用 SocketIO 的 serverless 模式
-    io = new Server({
-        cors: {
-            origin: "*",
-            methods: ["GET", "POST"],
-            credentials: true,
-            transports: ['websocket', 'polling']
-        },
-        allowEIO3: true,
-        path: '/socket.io/'
-    });
-
-    // 关键改变：在 Vercel 环境中，通常直接导出 app。Socket.IO 会通过 Vercel 的适配器自动处理。
-    // 有时，io.attach(app) 可以在内部帮助 Socket.IO 识别并处理请求。
-    // 如果没有显式创建 http 服务器，app.io = io 是一种将 Socket.IO 实例暴露给 Vercel 的方式。
-    module.exports = app;
-    app.io = io; // 确保io实例可以被Vercel的运行时访问和处理
-    console.log('[DEBUG] Running on Vercel, exporting app with attached Socket.IO'); // 新增日志
-} else {
-    // 本地开发环境，使用传统模式
-    const http = require('http').Server(app);
-    io = new Server(http, {
-        cors: {
-            origin: "*",
-            methods: ["GET", "POST"],
-            credentials: true,
-            transports: ['websocket', 'polling']
-        },
-        allowEIO3: true,
-        path: '/socket.io/'
-    });
-    // For local development, keep the http.listen as it is.
-    const ipaddress = process.env.IP || config.host;
-    const serverport = process.env.PORT || config.port;
-    http.listen(serverport, ipaddress, () => console.log('[DEBUG] Listening on ' + ipaddress + ':' + serverport));
-}
+// 使用标准的 HTTP 服务器配置
+const http = require('http').Server(app);
+const io = new Server(http, {
+    cors: {
+        origin: "*",
+        methods: ["GET", "POST"],
+        credentials: true,
+        transports: ['websocket', 'polling']
+    },
+    allowEIO3: true,
+    path: '/socket.io/'
+});
 
 io.on('connection', function (socket) {
     let type = socket.handshake.query.type;
@@ -740,14 +714,7 @@ setInterval(tickGame, 1000 / 60);
 setInterval(gameloop, 1000);
 setInterval(sendUpdates, 1000 / config.networkUpdateFactor);
 
-// 修改导出部分
-if (process.env.VERCEL) {
-    module.exports = app;
-    // 在 Vercel 环境中，Socket.IO 会自动附加到 app
-    app.io = io;
-} else {
-    // 本地开发环境
-    const ipaddress = process.env.IP || config.host;
-    const serverport = process.env.PORT || config.port;
-    http.listen(serverport, ipaddress, () => console.log('[DEBUG] Listening on ' + ipaddress + ':' + serverport));
-}
+// 服务器监听
+const ipaddress = process.env.IP || config.host;
+const serverport = process.env.PORT || config.port;
+http.listen(serverport, ipaddress, () => console.log('[DEBUG] Listening on ' + ipaddress + ':' + serverport));
