@@ -1,4 +1,13 @@
-var io = require('socket.io-client');
+// 兼容CDN和require两种加载方式
+var io;
+try {
+    // 尝试使用全局的io（CDN加载）
+    io = window.io || require('socket.io-client');
+} catch (e) {
+    // 如果require失败，使用全局io
+    io = window.io;
+}
+
 var render = require('./render');
 var ChatClient = require('./chat-client');
 var Canvas = require('./canvas');
@@ -356,10 +365,12 @@ function setupSocket(socket) {
         renderRoomList(rooms);
     });
     socket.on('spectate_joined', function (data) {
+        console.log('[DEBUG] spectate_joined event received:', data);
         hideRoomListUI();
         startGame('spectator', data.roomId);
     });
     socket.on('spectate_failed', function (data) {
+        console.log('[DEBUG] spectate_failed event received:', data);
         alert(data.reason || '观战失败');
     });
     socket.on('room_ended', function (data) {
@@ -499,7 +510,34 @@ function renderRoomList(rooms) {
         Array.from(document.getElementsByClassName('spectateBtn')).forEach(btn => {
             btn.onclick = function () {
                 const roomId = this.getAttribute('data-room');
-                if (socket) socket.emit('spectate_room', { roomId });
+                console.log('[DEBUG] Spectate button clicked for room:', roomId);
+                console.log('[DEBUG] Socket exists:', !!socket);
+                console.log('[DEBUG] Socket connected:', socket ? socket.connected : false);
+
+                if (socket && socket.connected) {
+                    console.log('[DEBUG] Emitting spectate_room event');
+                    socket.emit('spectate_room', { roomId });
+                } else if (socket && !socket.connected) {
+                    console.log('[DEBUG] Socket exists but not connected, waiting...');
+                    this.innerText = '连接中...';
+                    this.disabled = true;
+
+                    // 等待连接完成
+                    const waitForConnection = () => {
+                        if (socket.connected) {
+                            console.log('[DEBUG] Socket connected, now emitting spectate_room');
+                            socket.emit('spectate_room', { roomId });
+                            this.innerText = '观战';
+                            this.disabled = false;
+                        } else {
+                            setTimeout(waitForConnection, 100);
+                        }
+                    };
+                    waitForConnection();
+                } else {
+                    console.error('[ERROR] No socket connection for spectating');
+                    alert('正在连接服务器，请稍后再试');
+                }
             };
         });
     }

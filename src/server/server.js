@@ -58,6 +58,8 @@ io.on('connection', function (socket) {
             const roomId = 'room_' + (roomIdCounter++);
             const players = matchmakingQueue.splice(0, 3);
             activeRooms[roomId] = { players: [...players], spectators: [], status: 'playing', createdAt: Date.now() };
+            console.log('[DEBUG] Room created:', roomId, 'with players:', players);
+
             // 通知三名玩家进入房间
             players.forEach(pid => {
                 const psocket = io.sockets.sockets.get(pid);
@@ -67,6 +69,8 @@ io.on('connection', function (socket) {
                 }
             });
             if (aiTimeout) clearTimeout(aiTimeout);
+            // 修复：添加房间列表广播
+            broadcastRoomList();
         } else {
             // 通知所有等待玩家当前等待人数
             matchmakingQueue.forEach(pid => {
@@ -83,6 +87,10 @@ io.on('connection', function (socket) {
     });
 
     socket.on('get_rooms', () => {
+        console.log('[DEBUG] get_rooms request received');
+        console.log('[DEBUG] activeRooms:', Object.keys(activeRooms));
+        console.log('[DEBUG] activeRooms details:', activeRooms);
+
         // 只返回正在进行中的房间
         const rooms = Object.entries(activeRooms)
             .filter(([_, room]) => room.status === 'playing')
@@ -92,16 +100,26 @@ io.on('connection', function (socket) {
                 spectatorCount: room.spectators.length,
                 createdAt: room.createdAt
             }));
+
+        console.log('[DEBUG] Filtered rooms to send:', rooms);
         socket.emit('room_list', rooms);
     });
 
     socket.on('spectate_room', ({ roomId }) => {
+        console.log('[DEBUG] spectate_room request for room:', roomId);
+        console.log('[DEBUG] activeRooms keys:', Object.keys(activeRooms));
+
         const room = activeRooms[roomId];
         if (room && room.status === 'playing') {
+            console.log('[DEBUG] Room found, adding spectator:', socket.id);
             room.spectators.push(socket.id);
             socket.join(roomId);
             socket.emit('spectate_joined', { roomId });
+            console.log('[DEBUG] Spectator joined successfully:', roomId);
+            // 广播更新的房间列表（观众数+1）
+            broadcastRoomList();
         } else {
+            console.log('[DEBUG] Room not found or not playing:', roomId, room ? room.status : 'undefined');
             socket.emit('spectate_failed', { reason: '房间不存在或已结束' });
         }
     });
@@ -123,9 +141,13 @@ io.on('connection', function (socket) {
             const realPlayers = room.players.filter(pid => !pid.startsWith('AI_'));
             const remainingAIs = room.players.filter(pid => pid.startsWith('AI_'));
 
+            console.log('[DEBUG] Disconnect cleanup for room:', roomId, 'realPlayers:', realPlayers.length, 'AIs:', remainingAIs.length, 'spectators:', room.spectators.length);
+
             // 只有当没有真实玩家，且（没有观众或AI数量不足）时才清理房间
             if (realPlayers.length === 0 &&
                 (room.spectators.length === 0 || remainingAIs.length <= 1)) {
+                console.log('[DEBUG] Cleaning up room:', roomId);
+
                 // 删除房间内所有AI玩家
                 room.players.forEach(pid => {
                     if (pid.startsWith('AI_')) {
@@ -138,7 +160,10 @@ io.on('connection', function (socket) {
                 });
                 // 删除房间
                 delete activeRooms[roomId];
+                console.log('[DEBUG] Room cleaned up:', roomId);
             } else if (realPlayers.length === 0 && room.spectators.length > 0 && remainingAIs.length > 1) {
+                console.log('[DEBUG] Keeping room with AI for spectators:', roomId);
+
                 // 如果还有观众且有多个AI，通知观众AI继续对战
                 room.spectators.forEach(pid => {
                     const psocket = io.sockets.sockets.get(pid);
@@ -153,6 +178,8 @@ io.on('connection', function (socket) {
                 room.players = remainingAIs;
             }
         }
+        // 修复：添加房间列表广播，确保实时更新
+        broadcastRoomList();
     });
 });
 
@@ -339,14 +366,7 @@ const tickPlayer = (currentPlayer) => {
     if (!currentPlayer.cells || currentPlayer.cells.length === 0) {
         return;
     }
-    // AI移动日志
-    if (currentPlayer.isAI) {
-        console.log(`[AI][${currentPlayer.id}] move前 坐标: (${currentPlayer.x},${currentPlayer.y}) target:`, currentPlayer.target);
-    }
     currentPlayer.move(config.slowBase, config.gameWidth, config.gameHeight, INIT_MASS_LOG);
-    if (currentPlayer.isAI) {
-        console.log(`[AI][${currentPlayer.id}] move后 坐标: (${currentPlayer.x},${currentPlayer.y}) target:`, currentPlayer.target);
-    }
 
     const isEntityInsideCircle = (point, circle) => {
         return SAT.pointInCircle(new Vector(point.x, point.y), circle);
@@ -414,9 +434,6 @@ const tickPlayer = (currentPlayer) => {
         currentPlayer.x = currentPlayer.cells[0].x;
         currentPlayer.y = currentPlayer.cells[0].y;
     }
-
-    // 日志：Player主坐标、cells.length、cells[0]坐标
-    console.log(`[Player][${currentPlayer.id}] [tickPlayer] 主坐标: (${currentPlayer.x},${currentPlayer.y}), cells.length: ${currentPlayer.cells ? currentPlayer.cells.length : 0}, cells[0]:`, currentPlayer.cells && currentPlayer.cells[0] ? `(${currentPlayer.cells[0].x},${currentPlayer.cells[0].y})` : 'null');
 }
 
 // ========== AI玩家行为优化 ========== //
@@ -487,6 +504,8 @@ function tryMatchWithAI() {
         const players = matchmakingQueue.splice(0, matchmakingQueue.length);
         const aiNeeded = 3 - players.length;
         activeRooms[roomId] = { players: [...players], spectators: [], status: 'playing', createdAt: Date.now() };
+        console.log('[DEBUG] AI Room created:', roomId, 'with players:', players, 'AI needed:', aiNeeded);
+
         // 通知真人玩家
         players.forEach(pid => {
             const psocket = io.sockets.sockets.get(pid);
@@ -552,11 +571,26 @@ const tickGame = () => {
                     // 检查房间中剩余的玩家
                     const remainingPlayers = room.players.filter(pid => !pid.startsWith('AI_'));
                     const remainingAIs = room.players.filter(pid => pid.startsWith('AI_'));
+                    const totalRemainingPlayers = remainingPlayers.length + remainingAIs.length;
 
-                    // 只有当没有真实玩家且（没有观众或只剩1个AI）时才结束房间
-                    if (remainingPlayers.length === 0 &&
-                        (room.spectators.length === 0 || remainingAIs.length <= 1)) {
+                    // 修复：当只剩1个玩家时游戏结束（无论是真实玩家还是AI）
+                    if (totalRemainingPlayers <= 1) {
                         endRoom(roomId);
+                    }
+                    // 如果还有多个玩家但没有真实玩家，且有观众，让AI继续对战
+                    else if (remainingPlayers.length === 0 && remainingAIs.length > 1 && room.spectators.length > 0) {
+                        // 通知观众AI继续对战
+                        room.spectators.forEach(pid => {
+                            const psocket = io.sockets.sockets.get(pid);
+                            if (psocket) {
+                                psocket.emit('ai_continue', {
+                                    roomId,
+                                    aiCount: remainingAIs.length
+                                });
+                            }
+                        });
+                        // 更新房间状态，只保留AI
+                        room.players = remainingAIs;
                     }
                     break;
                 }
@@ -644,6 +678,8 @@ const updateSpectator = (socketID) => {
 function endRoom(roomId) {
     const room = activeRooms[roomId];
     if (room) {
+        console.log('[DEBUG] Ending room:', roomId, 'with players:', room.players, 'spectators:', room.spectators);
+
         // 判断赢家（最后剩下的玩家）
         let winnerId = null;
         if (room.players.length === 1) {
@@ -698,6 +734,7 @@ function endRoom(roomId) {
             }
         });
         delete activeRooms[roomId];
+        console.log('[DEBUG] Room deleted:', roomId, 'Remaining rooms:', Object.keys(activeRooms));
         // 主动推送房间列表
         broadcastRoomList();
     }
@@ -707,8 +744,6 @@ function endRoom(roomId) {
 function tickAIPlayer(aiPlayer) {
     if (!aiPlayer.isAI) return;
     if (!aiPlayer.cells || aiPlayer.cells.length === 0) return;
-
-    console.log(`[AI][${aiPlayer.id}] [tickAIPlayer] 主坐标: (${aiPlayer.x},${aiPlayer.y}), cells.length: ${aiPlayer.cells.length}, cells[0]:`, aiPlayer.cells[0] ? `(${aiPlayer.cells[0].x},${aiPlayer.cells[0].y})` : 'null');
 
     let myRoom = null;
     for (const [rid, room] of Object.entries(activeRooms)) {
@@ -727,16 +762,6 @@ function tickAIPlayer(aiPlayer) {
     // 获取所有玩家，包括AI
     const allPlayers = map.players.data;
     const allFood = map.food.data;
-
-    // 日志：AI和所有玩家的massTotal、坐标
-    console.log(`[AI][${aiPlayer.id}] massTotal: ${aiPlayer.massTotal}, 坐标: (${aiPlayer.x},${aiPlayer.y}), cells.length: ${aiPlayer.cells ? aiPlayer.cells.length : 0}`);
-    allPlayers.forEach(p => {
-        if (p.id !== aiPlayer.id) {
-            console.log(`[AI][${aiPlayer.id}] 其他实体(${p.id}) massTotal: ${p.massTotal}, 坐标: (${p.x},${p.y})`);
-        }
-    });
-    console.log(`[AI][${aiPlayer.id}] 食物数: ${allFood.length}`);
-    console.log(`[AI][${aiPlayer.id}] 当前target:`, aiPlayer.target);
 
     // ====== AI智能决策 ======
     const THREAT_DIST = 400; // 逃离阈值
@@ -757,7 +782,6 @@ function tickAIPlayer(aiPlayer) {
                 x: aiPlayer.x + (aiPlayer.x - threat.x) * 2,
                 y: aiPlayer.y + (aiPlayer.y - threat.y) * 2
             };
-            console.log(`[AI][${aiPlayer.id}] 逃离 实体(${threat.id}) 距离:${dist} 目标:`, aiPlayer.target);
             return;
         }
     }
@@ -773,7 +797,6 @@ function tickAIPlayer(aiPlayer) {
         if (prey && dist < PREY_DIST) {
             // 追逐猎物
             aiPlayer.target = { x: prey.x, y: prey.y };
-            console.log(`[AI][${aiPlayer.id}] 追逐 实体(${prey.id}) 距离:${dist} 目标:`, aiPlayer.target);
             return;
         }
     }
@@ -783,7 +806,6 @@ function tickAIPlayer(aiPlayer) {
         const { entity: food, dist } = getNearestEntity(aiPlayer, allFood);
         if (food && dist < FOOD_DIST) {
             aiPlayer.target = { x: food.x, y: food.y };
-            console.log(`[AI][${aiPlayer.id}] 寻找食物 距离:${dist} 目标:`, aiPlayer.target);
             return;
         }
     }
@@ -796,7 +818,6 @@ function tickAIPlayer(aiPlayer) {
             x: aiPlayer.x + Math.cos(angle) * distance,
             y: aiPlayer.y + Math.sin(angle) * distance
         };
-        console.log(`[AI][${aiPlayer.id}] 随机移动 目标:`, aiPlayer.target);
     }
 }
 

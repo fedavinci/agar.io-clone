@@ -73,6 +73,8 @@
     </div>
     <!-- JS -->
     <script src="//code.jquery.com/jquery-2.2.0.min.js"></script>
+    <!-- Socket.IO 客户端库 -->
+    <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
     <script src="js/app.js"></script>
     <script>
         function getQueryParam(name) {
@@ -97,22 +99,48 @@
                 // 等待所有脚本加载完成
                 setTimeout(() => {
                     console.log('[DEBUG] Starting socket initialization');
+
+                    // 获取房间列表容器
+                    const roomListWrapper = document.getElementById('roomListWrapper');
+
+                    // 检查io是否可用
+                    if (typeof io === 'undefined') {
+                        console.error('[ERROR] Socket.io not loaded!');
+                        if (roomListWrapper) {
+                            roomListWrapper.innerHTML = '<div style="color: red;">游戏服务器连接失败，请刷新页面重试</div>';
+                        }
+                        return;
+                    }
+
                     // 主动创建spectator socket连接
                     if (!window.socket) {
                         console.log('[DEBUG] Creating socket connection');
+                        roomListWrapper.innerHTML = '<div>正在连接游戏服务器...</div>';
+
                         window.socket = io({ query: "type=spectator" });
+
+                        // 监听连接状态
+                        window.socket.on('connect', () => {
+                            console.log('[DEBUG] Socket connected successfully');
+                            roomListWrapper.innerHTML = '<div>正在获取房间列表...</div>';
+                            window.socket.emit('get_rooms');
+                        });
+
+                        window.socket.on('connect_error', (error) => {
+                            console.error('[ERROR] Socket connection failed:', error);
+                            roomListWrapper.innerHTML = '<div style="color: red;">连接失败，请刷新页面重试</div>';
+                        });
+
+                        window.socket.on('disconnect', (reason) => {
+                            console.log('[DEBUG] Socket disconnected:', reason);
+                            roomListWrapper.innerHTML = '<div style="color: orange;">连接断开，正在重连...</div>';
+                        });
 
                         // 等待setupSocket函数可用
                         const waitForSetup = () => {
                             if (window.setupSocket && typeof window.setupSocket === 'function') {
                                 console.log('[DEBUG] Setting up socket listeners');
                                 window.setupSocket(window.socket);
-
-                                // 监听连接事件
-                                window.socket.on('connect', () => {
-                                    console.log('[DEBUG] Socket connected, requesting rooms');
-                                    window.socket.emit('get_rooms');
-                                });
 
                                 // 监听room_list事件进行调试
                                 window.socket.on('room_list', (rooms) => {

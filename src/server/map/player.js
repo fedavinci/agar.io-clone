@@ -39,7 +39,6 @@ class Cell {
 
     move(playerX, playerY, playerTarget, slowBase, initMassLog, isAI = false) {
         if (!playerTarget) return;
-        console.log(`[Player.move] playerTarget:`, playerTarget, `cells.length: ${this.cells ? this.cells.length : 0}, move前: (${this.x},${this.y})`);
         let dx, dy;
         if (isAI) {
             dx = playerTarget.x - this.x;
@@ -69,7 +68,6 @@ class Cell {
         if (!isNaN(deltaX)) {
             this.x += deltaX;
         }
-        console.log(`[Player.move] move后: (${this.x},${this.y})`);
     }
 
     // 0: nothing happened
