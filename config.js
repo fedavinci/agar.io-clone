@@ -1,12 +1,12 @@
 module.exports = {
     host: "0.0.0.0",
-    port: 3000,
+    port: process.env.PORT || 3000,
     logpath: "logger.php",
     foodMass: 1,
     fireFood: 20,
     limitSplit: 16,
     defaultPlayerMass: 10,
-	virus: {
+    virus: {
         fill: "#33ff33",
         stroke: "#19D119",
         strokeWidth: 20,
@@ -16,7 +16,7 @@ module.exports = {
         },
         splitMass: 180,
         uniformDisposition: false,
-	},
+    },
     gameWidth: 5000,
     gameHeight: 5000,
     adminPass: "DEFAULT",
@@ -32,6 +32,6 @@ module.exports = {
     massLossRate: 1,
     minMassLoss: 50,
     sqlinfo: {
-      fileName: "db.sqlite3",
+        fileName: "db.sqlite3",
     }
 };
